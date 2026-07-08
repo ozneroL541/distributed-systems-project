@@ -1,3 +1,5 @@
+package it.unitn.ds;
+
 class UpdateClock {
     /** Epoch number */
     private int e;
