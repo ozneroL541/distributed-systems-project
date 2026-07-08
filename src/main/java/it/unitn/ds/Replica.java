@@ -3,13 +3,12 @@ package it.unitn.ds;
 import akka.actor.ActorRef;
 import akka.actor.Props;
 
-import java.util.HashMap;
 import java.util.Optional;
 
 public class Replica extends AbstractReplica {
     /** List of positions in a replica */
-    final int[] positions = new int[AbstractReplica.POSITIONS_LIST_LENGTH];
-    final UpdateClock updateClock = new UpdateClock();
+    private final int[] positions = new int[AbstractReplica.POSITIONS_LIST_LENGTH];
+    private final UpdateClock updateClock = new UpdateClock();
 
     public Replica(int id) {
         this(id, AbstractReplica.MIN_LATENCY, AbstractReplica.MAX_LATENCY, AbstractReplica.COORDINATOR_BEAT_INTERVAL, Optional.empty());
