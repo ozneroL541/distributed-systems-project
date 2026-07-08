@@ -6,6 +6,8 @@ import akka.actor.Props;
 import java.util.Optional;
 
 public class Replica extends AbstractReplica {
+    /** List of positions in a replica */
+    public int[] postions = new int[AbstractReplica.POSITIONS_LIST_LENGTH];
 
     public Replica(int id) {
         this(id, AbstractReplica.MIN_LATENCY, AbstractReplica.MAX_LATENCY, AbstractReplica.COORDINATOR_BEAT_INTERVAL, Optional.empty());
