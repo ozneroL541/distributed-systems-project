@@ -2,6 +2,7 @@ package it.unitn.ds;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 import akka.actor.ActorRef;
 import akka.actor.ActorSystem;
@@ -37,9 +38,18 @@ public class Main {
         }
 
         // TODO: Create your clients
-        
+        final int N_CLIENT = 2;
+        Map<Integer, ActorRef> clients = new HashMap<>(N_CLIENT);
+        for (int i = 0; i < N_CLIENT; i++) {
+            Optional<ActorRef> defaultTargetReplica = Optional.empty();
+            clients.put(i,
+                    system.actorOf(
+                            Client.props(100, 100, defaultTargetReplica),
+                            "Client_" + i));
+        }
         // TODO: Implement your main logic
 
+        clients.get(0).tell(new AbstractClient.WriteRequest(3,56,replicas.get(0)), ActorRef.noSender());
         system.terminate();
 
         System.out.println("\n========================================");

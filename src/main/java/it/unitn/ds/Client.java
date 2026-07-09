@@ -27,12 +27,15 @@ public class Client extends AbstractClient {
 
     @Override
     public void sendWrite(ActorRef replica, int index, int value) {
+        log("Sending a Write request to: " + replica.path().name() +" with content: {index:"+index+", value:"+value+"}");
+        replica.tell(new AbstractClient.WriteRequest(index,value, replica),this.getSelf());
         // TODO: implement
     }
 
     @Override
     public final Receive createReceive() {
         return createBaseReceiveBuilder()
+                // onWriteRequest already matched by the abstract class
                 // TODO add your message handlers here .match(, )
                 .build();
     }
