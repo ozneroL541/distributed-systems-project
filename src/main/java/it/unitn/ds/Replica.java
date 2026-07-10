@@ -14,12 +14,12 @@ public class Replica extends AbstractReplica {
     /** List of all the replicas of the system. Integer is the id of the replica, ActorRef is the reference of the Replica inside AKKA */
     private Map<Integer, ActorRef> replicas;
     /** Replica specific filds */
-    private final Map<UpdateClock,UpdateData> history = new HashMap<>();
-    private UpdateIndex update_idx;
-    private final Queue<PendingWrite> pendingWrites = new ArrayDeque<>();
+    private final Map<UpdateClock, AbstractClient.WriteRequest> history = new HashMap<>();
+    private UpdateClock update_clock;
+    private final Queue<AbstractClient.WriteRequest> pendingWrites = new ArrayDeque<>();
 
     /** List of coordinator filed */
-    private final Map<UpdateIndex,Integer> UpdateACKCounter = new HashMap<>();
+    private final Map<UpdateClock, Integer> UpdateACKCounter = new HashMap<>();
 
     /** Replica used for "transporting" message ref inside the pendingWrite queue */
     public record PendingWrite(ActorRef clientRef, int index, int value) {}
@@ -30,7 +30,7 @@ public class Replica extends AbstractReplica {
 
     public Replica(int id, int minLatency, int maxLatency, int coordinatorBeatInterval, Optional<ActorRef> listener) {
         super(id, minLatency, maxLatency, coordinatorBeatInterval, listener);
-        this.update_idx = new UpdateIndex();
+        this.update_clock = new UpdateClock();
         // TODO: implement
     }
 
@@ -92,29 +92,27 @@ public class Replica extends AbstractReplica {
     // Messages classes
     // =================================================================================
     public static class UpdateRequest implements Serializable {
+        UpdateClock identifier;
         ActorRef coordinator;
-        UpdateIndex identifier;
-        int index;
-        int value;
+        AbstractClient.WriteRequest writeRequest;
 
-        public UpdateRequest(int index, int value, ActorRef coordinator, UpdateIndex identifier) {
+        public UpdateRequest(UpdateClock identifier, ActorRef coordinator, AbstractClient.WriteRequest writeRequest) {
             this.identifier = identifier;
-            this.value = value;
-            this.index = index;
             this.coordinator = coordinator;
+            this.writeRequest = writeRequest;
         }
     }
 
     public static class UpdateACK implements Serializable {
-        UpdateIndex identifier;
-        public UpdateACK(UpdateIndex identifier){
+        UpdateClock identifier;
+        public UpdateACK(UpdateClock identifier){
             this.identifier = identifier;
         }
     }
 
     public static class WriteOK implements Serializable {
-        UpdateIndex identifier;
-        public WriteOK(UpdateIndex identifier){
+        UpdateClock identifier;
+        public WriteOK(UpdateClock identifier){
             this.identifier = identifier;
         }
     }
@@ -137,13 +135,13 @@ public class Replica extends AbstractReplica {
 
         if (getSender() == msg.replica) {
             debug("Inserting the request inside my pending write queue");
-            this.pendingWrites.add(new PendingWrite(msg.replica,msg.index,msg.value));
+            this.pendingWrites.add(msg);
         }
         log("Recived a Write request by "+ getSender().path().name() + " with content: {index:"+msg.index+", value:"+msg.value+"}");
         if (this.coordinator_id == this.id) {
             log("I'm the coordinator; Sending the update message");
-            this.update_idx.incrementI();
-            UpdateRequest updateRequest = new UpdateRequest(msg.index, msg.value, this.getSelf(),this.update_idx);
+            this.update_clock.incrementI();
+            UpdateRequest updateRequest = new UpdateRequest(this.update_clock, this.getSelf(), msg);
             this.UpdateACKCounter.put(updateRequest.identifier, 0);
             multicast(updateRequest);
 
@@ -156,9 +154,9 @@ public class Replica extends AbstractReplica {
     }
 
     private void onUpdateRequest(Replica.UpdateRequest msg) {
-        log("Recived an Update request from coordinator with content: {index:"+msg.index+", value:"+msg.value+"}");
+        log("Recived an Update request from coordinator with content: {index:"+msg.writeRequest.index+", value:"+msg.writeRequest.value+"}");
         // add update to history
-        history.put(msg.identifier,new UpdateData(msg.index,msg.value));
+        history.put(msg.identifier, msg.writeRequest);
         debug("My history is"+history.keySet()+history.values());
         msg.coordinator.tell(new UpdateACK(msg.identifier), this.getSelf());
     }
@@ -187,20 +185,20 @@ public class Replica extends AbstractReplica {
 
     private void onWriteOK(Replica.WriteOK msg) {
         log("Recived a WriteOK message from the coordinator, applying the update");
-        UpdateIndex identifier = msg.identifier;
-        UpdateData updateData = this.history.get(identifier);
-        this.positions[updateData.getIndex()] = updateData.getValue();
-        this.update_idx = identifier;
-        this.callbackOnUpdateApplied(updateData.getIndex(),updateData.getValue());
+        UpdateClock identifier = msg.identifier;
+        AbstractClient.WriteRequest writeRequest = this.history.get(identifier);
+        this.positions[writeRequest.index] = writeRequest.value;
+        this.update_clock = identifier;
+        this.callbackOnUpdateApplied(writeRequest.index,writeRequest.value);
         debug("New positions is: "+ Arrays.toString(this.positions));
         debug("pending wirte"+ pendingWrites.toString());
 
         this.pendingWrites.stream()
-                .filter(p -> (p.index == updateData.getIndex() && p.value == updateData.getValue()))
+                .filter(p -> (p.index == writeRequest.index && p.value == writeRequest.value))
                 .findFirst()
                 .ifPresent(
-                        cpw -> cpw.clientRef.tell(
-                                new AbstractClient.WriteResult(true, updateData.getIndex(), updateData.getValue(), this.id),
+                        cpw -> cpw.replica.tell(
+                                new AbstractClient.WriteResult(true, writeRequest.index, writeRequest.value, this.id),
                                 this.getSelf()));
     }
 
