@@ -80,6 +80,7 @@ public class Replica extends AbstractReplica {
                 .match(Replica.UpdateRequest.class,       this::onUpdateRequest)
                 .match(Replica.UpdateACK.class,           this::onUpdateACK)
                 .match(Replica.WriteOK.class,             this::onWriteOK)
+                .match(Replica.TimeOut.class,             this::onTimeOut)
                 // TODO add your message handlers here .match(, )
                 .build();
     }
@@ -129,15 +130,13 @@ public class Replica extends AbstractReplica {
     }
 
     public static class TimeOut implements Serializable {
-        public enum Type {
-            Heartbeat,
-            Update,
-            WriteOK,
-            Election
-        }
-        public final TimeOut.Type type;
-
-        public TimeOut(TimeOut.Type type) {
+        /** The type of timeout */
+        public final Crash.Type type;
+        /**
+         * Constructor for TimeOut
+         * @param type the type of timeout
+         */
+        public TimeOut(Crash.Type type) {
             this.type = type;
         }
     }
@@ -237,9 +236,30 @@ public class Replica extends AbstractReplica {
 
     }
 
-    private void OnTimeOut(TimeOut msg) {
-        debug("Received a TimeOut");
-        // TODO switch
+    /**
+     * Handle a timeout message
+     * @param msg the timeout message
+     */
+    private void onTimeOut(TimeOut msg) {
+        switch (msg.type) {
+            case Crash.Type.Now:
+                log("Timeout: Crashing the replica");
+                break;
+            case Crash.Type.Heartbeat:
+                log("Timeout: Restarting the replica");
+                break;
+            case Crash.Type.Update:
+                log("Timeout: Update timeout");
+                break;
+            case Crash.Type.WriteOK:
+                log("Timeout: WriteOK timeout");
+                break;
+            case Crash.Type.Election:
+                log("Timeout: Election timeout");
+                break;
+            default:
+                break;
+        }
     }
 
 }
