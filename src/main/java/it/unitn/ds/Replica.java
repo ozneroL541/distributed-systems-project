@@ -199,8 +199,10 @@ public class Replica extends AbstractReplica {
         UpdateClock identifier = msg.identifier;
         AbstractClient.WriteRequest writeRequest = this.history.get(identifier);
         this.positions[writeRequest.index] = writeRequest.value;
-        // TODO: fix
-        this.updateClock = identifier;
+        if (this.updateClock.compareTo(identifier) > 0 ) {
+            return;
+        }
+        this.updateClock.syncClock(identifier);
         this.callbackOnUpdateApplied(writeRequest.index,writeRequest.value);
         debug("New positions is: "+ Arrays.toString(this.positions));
         debug("pending wirte"+ pendingWrites.toString());
