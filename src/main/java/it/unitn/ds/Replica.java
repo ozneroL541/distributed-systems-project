@@ -52,7 +52,7 @@ public class Replica extends AbstractReplica {
 
     @Override
     public void crash(AbstractReplica.Crash how_to_crash) {
-        // TODO: implement
+        getContext().become(crashed());
     }
 
     @Override
@@ -73,6 +73,12 @@ public class Replica extends AbstractReplica {
                 .match(Replica.UpdateACK.class,           this::onUpdateACK)
                 .match(Replica.WriteOK.class,             this::onWriteOK)
                 // TODO add your message handlers here .match(, )
+                .build();
+    }
+
+    public Receive crashed() {
+        return receiveBuilder()
+                .matchAny(msg -> {})
                 .build();
     }
 
