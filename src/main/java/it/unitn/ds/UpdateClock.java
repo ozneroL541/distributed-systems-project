@@ -1,15 +1,10 @@
 package it.unitn.ds;
 
-import java.util.HashMap;
-import java.util.Map;
-
-class UpdateClock {
+class UpdateClock implements Comparable<UpdateClock> {
     /** Epoch number */
     private int e;
     /** Sequence number */
     private int i;
-    /** History of updates */
-    private final Map<Integer, Integer> history = new HashMap<>();
     /**
      * Constructor for UpdateClock
      * @param e the epoch number
@@ -43,16 +38,21 @@ class UpdateClock {
     /**
      * Increment the epoch number
      */
-    public void incrementE() {
+    public synchronized void incrementE() {
         this.e++;
         this.i = 0;
-        this.history.put(this.e, this.i);
     }
     /**
      * Increment the sequence number
      */
-    public void incrementI() {
+    public synchronized void incrementI() {
         this.i++;
-        this.history.put(this.e, this.i);
+    }
+    @Override
+    public int compareTo(UpdateClock arg0) {
+        if (this.e != arg0.e) {
+            return Integer.compare(this.e, arg0.e);
+        }
+        return Integer.compare(this.i, arg0.i);
     }
 }
