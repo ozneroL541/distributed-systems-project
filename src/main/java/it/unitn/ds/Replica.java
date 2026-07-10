@@ -4,6 +4,8 @@ import akka.actor.ActorRef;
 import akka.actor.Props;
 
 import java.io.Serializable;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
@@ -13,11 +15,11 @@ public class Replica extends AbstractReplica {
     private final UpdateClock updateClock = new UpdateClock();
     private int coordinator_id = 0;
     private Map<Integer, ActorRef> replicas;
-    private Map<UpdateIndex,UpdateData> history;
+    private Map<UpdateIndex,UpdateData> history = new HashMap<>();
     private UpdateIndex update_idx;
 
     /** List of coordinator filed */
-    private Map<UpdateIndex,Integer> UpdateACKCounter;
+    private Map<UpdateIndex,Integer> UpdateACKCounter = new HashMap<>();
 
     public Replica(int id) {
         this(id, AbstractReplica.MIN_LATENCY, AbstractReplica.MAX_LATENCY, AbstractReplica.COORDINATOR_BEAT_INTERVAL, Optional.empty());
@@ -64,6 +66,7 @@ public class Replica extends AbstractReplica {
                 .match(AbstractClient.WriteRequest.class, this::onWriteRequest)
                 .match(Replica.UpdateRequest.class,       this::onUpdateRequest)
                 .match(Replica.UpdateACK.class,           this::onUpdateACK)
+                .match(Replica.WriteOK.class,             this::onWriteOK)
                 // TODO add your message handlers here .match(, )
                 .build();
     }
@@ -98,6 +101,13 @@ public class Replica extends AbstractReplica {
         }
     }
 
+    public static class WriteOK implements Serializable {
+        UpdateIndex identifier;
+        public WriteOK(UpdateIndex identifier){
+            this.identifier = identifier;
+        }
+    }
+
     // =================================================================================
     // Messages handler functions
     // =================================================================================
@@ -118,6 +128,11 @@ public class Replica extends AbstractReplica {
         log("Recived a Write request by "+ getSender().path().name() + " with content: {index:"+msg.index+", value:"+msg.value+"}");
         if (this.coordinator_id == this.id) {
             log("I'm the coordinator; Sending the update message");
+            this.update_idx.incrementI();
+            UpdateRequest updateRequest = new UpdateRequest(msg.index, msg.value, this.getSelf(),this.update_idx);
+            this.UpdateACKCounter.put(updateRequest.identifier, 0);
+            multicast(updateRequest);
+
         }
         else {
             log("Sending an update request to the coordinator (ID: " + this.coordinator_id + ")" + " with content: {index:" + msg.index + ", value:" + msg.value + "}");
@@ -130,16 +145,23 @@ public class Replica extends AbstractReplica {
         log("Recived an Update request from coordinator with content: {index:"+msg.index+", value:"+msg.value+"}");
         // add update to history
         history.put(msg.identifier,new UpdateData(msg.index,msg.value));
-        debug("My history is"+history.toString());
+        debug("My history is"+history.keySet()+history.values());
         msg.coordinator.tell(new UpdateACK(msg.identifier), this.getSelf());
     }
 
     private void onUpdateACK(Replica.UpdateACK msg) {
         debug("recived ack from "+ getSender().path().name());
-        int ACKnumber = UpdateACKCounter.getOrDefault(msg.identifier,0) + 1;
-        int qourum = replicas.size()/2 +1;
-        if (ACKnumber >= qourum) {
-//            multicast();
+//        int ACKnumber = UpdateACKCounter.getOrDefault(msg.identifier,0) + 1;
+        Integer ACKnumber = UpdateACKCounter.get(msg.identifier);
+        if (ACKnumber == null) {
+            return;
+        }
+        ACKnumber += 1;
+        int quorum = replicas.size()/2 +1;
+        if (ACKnumber >= quorum) {
+            WriteOK writeOK = new WriteOK(msg.identifier);
+            multicast(writeOK);
+            this.UpdateACKCounter.remove(msg.identifier);
         } else {
             UpdateACKCounter.put(
                     msg.identifier,
@@ -147,6 +169,14 @@ public class Replica extends AbstractReplica {
             );
         }
 
+    }
+
+    private void onWriteOK(Replica.WriteOK msg) {
+        log("Recived a WriteOK message from the coordinator, applying the update");
+        UpdateIndex identifier = msg.identifier;
+        UpdateData updateData = this.history.get(identifier);
+        this.positions[updateData.getIndex()] = updateData.getValue();
+        debug("New positions is: "+ Arrays.toString(this.positions));
     }
 
 }
