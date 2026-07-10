@@ -80,7 +80,7 @@ public class Replica extends AbstractReplica {
                 .match(Replica.UpdateRequest.class,       this::onUpdateRequest)
                 .match(Replica.UpdateACK.class,           this::onUpdateACK)
                 .match(Replica.WriteOK.class,             this::onWriteOK)
-                .match(Replica.TimeOut.class,             this::onTimeOut)
+                .match(TimeOut.class,                     this::onTimeOut)
                 // TODO add your message handlers here .match(, )
                 .build();
     }
@@ -126,18 +126,6 @@ public class Replica extends AbstractReplica {
         UpdateClock identifier;
         public WriteOK(UpdateClock identifier){
             this.identifier = identifier;
-        }
-    }
-
-    public static class TimeOut implements Serializable {
-        /** The type of timeout */
-        public final Crash.Type type;
-        /**
-         * Constructor for TimeOut
-         * @param type the type of timeout
-         */
-        public TimeOut(Crash.Type type) {
-            this.type = type;
         }
     }
 
