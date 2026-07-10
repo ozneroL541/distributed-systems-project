@@ -11,7 +11,7 @@ public class Replica extends AbstractReplica {
     private final int[] positions = new int[AbstractReplica.POSITIONS_LIST_LENGTH];
     private final UpdateClock updateClock = new UpdateClock();
     private int coordinator_id = 0;
-    /** List of all the replicas of the system. Integer is the id of the replica, ActorRef is the reference of the Replica inside AKKA
+    /** List of all the replicas of the system. Integer is the id of the replica, ActorRef is the reference of the Replica inside AKKA */
     private Map<Integer, ActorRef> replicas;
     /** Replica specific filds */
     private final Map<UpdateClock,UpdateData> history = new HashMap<>();
