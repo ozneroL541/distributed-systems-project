@@ -13,7 +13,13 @@ public class Replica extends AbstractReplica {
     private final UpdateClock updateClock;
     /** The id of the coordinator */
     private int coordinatorID = 0;
-    /** List of all the replicas of the system. Integer is the id of the replica, ActorRef is the reference of the Replica inside AKKA */
+    /** The number of replicas in the system */
+    private int numberOfReplicas;
+    /** 
+     * List of all alive replicas of the system. 
+     * Integer is the id of the replica, 
+     * ActorRef is the reference of the Replica inside AKKA 
+     */
     private Map<Integer, ActorRef> replicas;
     /** Replica specific filds */
     private final Map<UpdateClock, AbstractClient.WriteRequest> history = new HashMap<>();
@@ -67,6 +73,7 @@ public class Replica extends AbstractReplica {
     public void initSystem(InitSystem sysInit) {
         // TODO: implement
         this.replicas = sysInit.group;
+        this.numberOfReplicas = sysInit.group.size();
         int coordinator_id = sysInit.coordinator_id;
         this.coordinatorID = coordinator_id;
         log("I set as coordinator: "+coordinator_id);
@@ -252,5 +259,57 @@ public class Replica extends AbstractReplica {
                 break;
         }
     }
+    /**
+     * Handle a coordinator crash by removing it from the 
+     * list of replicas and starting an election.
+     */
+    private void onCoordinatorCrash() {
+        this.nodeCrashed(this.coordinatorID);
+        this.startElection();
+    }
 
+    /**
+     * Handle a node crash by removing it from the list of replicas.
+     * @param id the id of the crashed node
+     */
+    private void nodeCrashed(int id){
+        this.replicas.remove(id);
+    }
+    /**
+     * Get the next replica ID in a ring topology.
+     * @param id the current replica ID
+     * @return the next replica ID
+     */
+    private int nextReplicaID(int id) {
+        return (id + 1) % this.numberOfReplicas;
+    }
+    /**
+     * Get the next alive replica ID in a ring topology, skipping crashed nodes.
+     * @return the next alive replica ID
+     */
+    private int getNextAliveReplicaID() {
+        /** Proposed next replica ID */
+        int nextReplicaID = this.id;
+        do {
+            nextReplicaID = nextReplicaID(nextReplicaID);
+        } while (!this.replicas.containsKey(nextReplicaID));
+        return nextReplicaID;
+    }
+    /**
+     * Send a message to the next alive replica in a ring topology.
+     * @param msg the message to send
+     */
+    private void sendToNextReplica(Serializable msg) {
+        int nextReplicaID = this.getNextAliveReplicaID();
+        ActorRef nextReplica = this.replicas.get(nextReplicaID);
+        nextReplica.tell(msg, this.getSelf());
+        // TODO: If the next replica doesn't respond, we should try the next one in the ring. This is not implemented yet.
+    }
+    /**
+     * Start an election.
+     */
+    private void startElection() {
+        ElectionStarted electionStarted = new ElectionStarted(this.id, this.coordinatorID);
+        this.sendToNextReplica(electionStarted);
+    }
 }
