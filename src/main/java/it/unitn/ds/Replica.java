@@ -128,6 +128,20 @@ public class Replica extends AbstractReplica {
         }
     }
 
+    public static class TimeOut implements Serializable {
+        public enum Type {
+            Heartbeat,
+            Update,
+            WriteOK,
+            Election
+        }
+        public final TimeOut.Type type;
+
+        public TimeOut(TimeOut.Type type) {
+            this.type = type;
+        }
+    }
+
     // =================================================================================
     // Messages handler functions
     // =================================================================================
@@ -221,6 +235,11 @@ public class Replica extends AbstractReplica {
         int position = this.positions[msg.index];
         msg.replica.tell(new AbstractClient.ReadResult(true,msg.index, position, this.id), this.getSelf());
 
+    }
+
+    private void OnTimeOut(TimeOut msg) {
+        debug("Received a TimeOut");
+        // TODO switch
     }
 
 }
