@@ -230,20 +230,23 @@ public class Replica extends AbstractReplica {
      */
     private void onTimeOut(TimeOut msg) {
         switch (msg.type) {
-            case Crash.Type.Now:
-                log("Timeout: Crashing the replica");
+            case TimeOut.TimeoutType.SendRead:
+                log("Timeout on read request");
                 break;
-            case Crash.Type.Heartbeat:
-                log("Timeout: Restarting the replica");
+            case TimeOut.TimeoutType.SendWrite:
+                log("Timeout on write request");
                 break;
-            case Crash.Type.Update:
-                log("Timeout: Update timeout");
+            case TimeOut.TimeoutType.UpdateRequest:
+                log("Timeout on update request");
                 break;
-            case Crash.Type.WriteOK:
-                log("Timeout: WriteOK timeout");
+            case TimeOut.TimeoutType.WriteRequest:
+                log("Timeout on write request");
                 break;
-            case Crash.Type.Election:
-                log("Timeout: Election timeout");
+            case TimeOut.TimeoutType.Heartbeat:
+                log("Timeout on heartbeat");
+                break;
+            case TimeOut.TimeoutType.Election:
+                log("Timeout on election");
                 break;
             default:
                 break;
