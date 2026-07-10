@@ -4,10 +4,7 @@ import akka.actor.ActorRef;
 import akka.actor.Props;
 
 import java.io.Serializable;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 public class Replica extends AbstractReplica {
     /** List of positions in a replica */
@@ -15,11 +12,16 @@ public class Replica extends AbstractReplica {
     private final UpdateClock updateClock = new UpdateClock();
     private int coordinator_id = 0;
     private Map<Integer, ActorRef> replicas;
-    private Map<UpdateIndex,UpdateData> history = new HashMap<>();
+    /** Replica specific filds */
+    private final Map<UpdateIndex,UpdateData> history = new HashMap<>();
     private UpdateIndex update_idx;
+    private final Queue<PendingWrite> pendingWrites = new ArrayDeque<>();
 
     /** List of coordinator filed */
-    private Map<UpdateIndex,Integer> UpdateACKCounter = new HashMap<>();
+    private final Map<UpdateIndex,Integer> UpdateACKCounter = new HashMap<>();
+
+    /** Replica used for "transporting" message ref inside the pendingWrite queue */
+    public record PendingWrite(ActorRef clientRef, int index, int value) {}
 
     public Replica(int id) {
         this(id, AbstractReplica.MIN_LATENCY, AbstractReplica.MAX_LATENCY, AbstractReplica.COORDINATOR_BEAT_INTERVAL, Optional.empty());
@@ -43,7 +45,8 @@ public class Replica extends AbstractReplica {
     @Override
     public int getSystemNumberOfActors() {
         // TODO: implement
-        return 0;
+//        return 0;
+        return this.replicas.size();
     }
 
     @Override
@@ -63,6 +66,7 @@ public class Replica extends AbstractReplica {
     @Override
     public final Receive createReceive() {
         return createBaseReceiveBuilder()
+                .match(AbstractClient.ReadRequest.class,  this::onReadRequest)
                 .match(AbstractClient.WriteRequest.class, this::onWriteRequest)
                 .match(Replica.UpdateRequest.class,       this::onUpdateRequest)
                 .match(Replica.UpdateACK.class,           this::onUpdateACK)
@@ -124,7 +128,10 @@ public class Replica extends AbstractReplica {
 //            );
 //        }
 
-
+        if (getSender() == msg.replica) {
+            debug("Inserting the request inside my pending write queue");
+            this.pendingWrites.add(new PendingWrite(msg.replica,msg.index,msg.value));
+        }
         log("Recived a Write request by "+ getSender().path().name() + " with content: {index:"+msg.index+", value:"+msg.value+"}");
         if (this.coordinator_id == this.id) {
             log("I'm the coordinator; Sending the update message");
@@ -176,7 +183,25 @@ public class Replica extends AbstractReplica {
         UpdateIndex identifier = msg.identifier;
         UpdateData updateData = this.history.get(identifier);
         this.positions[updateData.getIndex()] = updateData.getValue();
+        this.update_idx = identifier;
+        this.callbackOnUpdateApplied(updateData.getIndex(),updateData.getValue());
         debug("New positions is: "+ Arrays.toString(this.positions));
+        debug("pending wirte"+ pendingWrites.toString());
+
+        this.pendingWrites.stream()
+                .filter(p -> (p.index == updateData.getIndex() && p.value == updateData.getValue()))
+                .findFirst()
+                .ifPresent(
+                        cpw -> cpw.clientRef.tell(
+                                new AbstractClient.WriteResult(true, updateData.getIndex(), updateData.getValue(), this.id),
+                                this.getSelf()));
+    }
+
+    private void onReadRequest(AbstractClient.ReadRequest msg) {
+        debug("Recived a Read request from client");
+        int position = this.positions[msg.index];
+        msg.replica.tell(new AbstractClient.ReadResult(true,msg.index, position, this.id), this.getSelf());
+
     }
 
 }

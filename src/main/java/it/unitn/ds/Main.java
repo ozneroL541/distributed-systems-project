@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
+import akka.actor.Actor;
 import akka.actor.ActorRef;
 import akka.actor.ActorSystem;
 import it.unitn.ds.AbstractReplica.InitSystem;
@@ -49,7 +50,7 @@ public class Main {
         }
         // TODO: Implement your main logic
 
-        clients.get(0).tell(new AbstractClient.WriteRequest(3,56,replicas.get(1)), ActorRef.noSender());
+        clients.get(0).tell(new AbstractClient.WriteRequest(3,56,replicas.get(1)), Actor.noSender());
         system.terminate();
 
         System.out.println("\n========================================");

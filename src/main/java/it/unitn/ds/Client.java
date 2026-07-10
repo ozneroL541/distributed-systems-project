@@ -22,13 +22,15 @@ public class Client extends AbstractClient {
 
     @Override
     public void sendRead(ActorRef replica, int index) {
+        log("Sending a Read request to:"+ replica.path().name());
+        replica.tell(new AbstractClient.ReadRequest(index, this.getSelf()), this.getSelf());
         // TODO: implement        
     }
 
     @Override
     public void sendWrite(ActorRef replica, int index, int value) {
         log("Sending a Write request to: " + replica.path().name() +" with content: {index:"+index+", value:"+value+"}");
-        replica.tell(new AbstractClient.WriteRequest(index,value, replica),this.getSelf());
+        replica.tell(new AbstractClient.WriteRequest(index,value, this.getSelf()),this.getSelf());
         // TODO: implement
     }
 
@@ -36,6 +38,8 @@ public class Client extends AbstractClient {
     public final Receive createReceive() {
         return createBaseReceiveBuilder()
                 // onWriteRequest already matched by the abstract class
+                .match(AbstractClient.ReadResult.class,   this::callbackOnReadResult)
+                .match(AbstractClient.WriteResult.class, this::callbackOnWriteResult)
                 // TODO add your message handlers here .match(, )
                 .build();
     }
