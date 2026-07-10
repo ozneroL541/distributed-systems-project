@@ -55,4 +55,14 @@ class UpdateClock implements Comparable<UpdateClock> {
         }
         return Integer.compare(this.i, arg0.i);
     }
+    /**
+     * Synchronize the clock with a more recent clock
+     * @param other the other clock to synchronize with
+     */
+    public synchronized void syncClock(UpdateClock other) {
+        if (this.compareTo(other) < 0) {
+            this.e = other.e;
+            this.i = other.i;
+        }
+    }
 }

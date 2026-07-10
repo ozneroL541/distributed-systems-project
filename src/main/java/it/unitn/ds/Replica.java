@@ -9,27 +9,36 @@ import java.util.*;
 public class Replica extends AbstractReplica {
     /** List of positions in a replica */
     private final int[] positions = new int[AbstractReplica.POSITIONS_LIST_LENGTH];
-    private int coordinator_id = 0;
+    /** The update clock for the replica */
+    private final UpdateClock updateClock;
+    /** The id of the coordinator */
+    private int coordinatorID = 0;
     /** List of all the replicas of the system. Integer is the id of the replica, ActorRef is the reference of the Replica inside AKKA */
     private Map<Integer, ActorRef> replicas;
     /** Replica specific filds */
     private final Map<UpdateClock, AbstractClient.WriteRequest> history = new HashMap<>();
-    private UpdateClock update_clock;
+    /** Queue for pending write requests */
     private final Queue<AbstractClient.WriteRequest> pendingWrites = new ArrayDeque<>();
-
     /** List of coordinator filed */
     private final Map<UpdateClock, Integer> UpdateACKCounter = new HashMap<>();
-
-    /** Replica used for "transporting" message ref inside the pendingWrite queue */
-    public record PendingWrite(ActorRef clientRef, int index, int value) {}
-
+    /**
+     * Constructor for Replica
+     * @param id the id of the replica
+     */
     public Replica(int id) {
         this(id, AbstractReplica.MIN_LATENCY, AbstractReplica.MAX_LATENCY, AbstractReplica.COORDINATOR_BEAT_INTERVAL, Optional.empty());
     }
-
+    /**
+     * Constructor for Replica
+     * @param id the id of the replica
+     * @param minLatency the minimum latency
+     * @param maxLatency the maximum latency
+     * @param coordinatorBeatInterval the interval for coordinator beats
+     * @param listener the listener for the replica
+     */
     public Replica(int id, int minLatency, int maxLatency, int coordinatorBeatInterval, Optional<ActorRef> listener) {
         super(id, minLatency, maxLatency, coordinatorBeatInterval, listener);
-        this.update_clock = new UpdateClock();
+        this.updateClock = new UpdateClock();
         // TODO: implement
     }
 
@@ -59,7 +68,7 @@ public class Replica extends AbstractReplica {
         // TODO: implement
         this.replicas = sysInit.group;
         int coordinator_id = sysInit.coordinator_id;
-        this.coordinator_id = coordinator_id;
+        this.coordinatorID = coordinator_id;
         log("I set as coordinator: "+coordinator_id);
     }
 
@@ -80,7 +89,10 @@ public class Replica extends AbstractReplica {
                 .matchAny(msg -> {})
                 .build();
     }
-
+    /**
+     * Multicast a message to all the replicas
+     * @param m the message to multicast
+     */
     void multicast(Serializable m) {
         for (ActorRef r : replicas.values()) {
             r.tell(m, this.getSelf());
@@ -137,17 +149,17 @@ public class Replica extends AbstractReplica {
             this.pendingWrites.add(msg);
         }
         log("Recived a Write request by "+ getSender().path().name() + " with content: {index:"+msg.index+", value:"+msg.value+"}");
-        if (this.coordinator_id == this.id) {
+        if (this.coordinatorID == this.id) {
             log("I'm the coordinator; Sending the update message");
-            this.update_clock.incrementI();
-            UpdateRequest updateRequest = new UpdateRequest(this.update_clock, this.getSelf(), msg);
+            this.updateClock.incrementI();
+            UpdateRequest updateRequest = new UpdateRequest(this.updateClock, this.getSelf(), msg);
             this.UpdateACKCounter.put(updateRequest.identifier, 0);
             multicast(updateRequest);
 
         }
         else {
-            log("Sending an update request to the coordinator (ID: " + this.coordinator_id + ")" + " with content: {index:" + msg.index + ", value:" + msg.value + "}");
-            ActorRef coordinator = this.replicas.get(this.coordinator_id);
+            log("Sending an update request to the coordinator (ID: " + this.coordinatorID + ")" + " with content: {index:" + msg.index + ", value:" + msg.value + "}");
+            ActorRef coordinator = this.replicas.get(this.coordinatorID);
             coordinator.tell(msg, this.getSelf());
         }
     }
@@ -187,7 +199,8 @@ public class Replica extends AbstractReplica {
         UpdateClock identifier = msg.identifier;
         AbstractClient.WriteRequest writeRequest = this.history.get(identifier);
         this.positions[writeRequest.index] = writeRequest.value;
-        this.update_clock = identifier;
+        // TODO: fix
+        this.updateClock = identifier;
         this.callbackOnUpdateApplied(writeRequest.index,writeRequest.value);
         debug("New positions is: "+ Arrays.toString(this.positions));
         debug("pending wirte"+ pendingWrites.toString());
