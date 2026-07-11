@@ -45,8 +45,12 @@ public class Main {
             Optional<ActorRef> defaultTargetReplica = Optional.empty();
             clients.put(i,
                     system.actorOf(
-                            Client.props(100, 100, defaultTargetReplica),
+                            Client.props(2000, 2000, defaultTargetReplica),
                             "Client_" + i));
+        }
+        InitSystem clientInitMsg = new InitSystem(replicas, COORDINATOR_ID);
+        for (Map.Entry<Integer, ActorRef> entry : clients.entrySet()) {
+            entry.getValue().tell(initMsg, ActorRef.noSender());
         }
         // TODO: Implement your main logic
 
@@ -54,7 +58,7 @@ public class Main {
 
         try {
             // Wait for 10 seconds to let the system run
-            Thread.sleep(10000);
+            Thread.sleep(5000);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
