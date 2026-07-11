@@ -24,11 +24,21 @@ public class Replica extends AbstractReplica {
      * ActorRef is the reference of the Replica inside AKKA 
      */
     private Map<Integer, ActorRef> replicas;
-    /** Replica specific fields */
+    // ________________________________
+    // Replica specific variables
+    // ________________________________
+    /** HashMap to store the history of update commited by the replica */
     private final Map<UpdateClock, AbstractClient.WriteRequest> history = new HashMap<>();
     /** Queue for pending write requests */
     private final Queue<AbstractClient.WriteRequest> pendingWrites = new ArrayDeque<>();
-    /** List of coordinator filed */
+    /** HashMap to store Cancellable for timeout on the writeRequest message send to the coordinator */
+    private final HashMap<AbstractClient.WriteRequest, Queue<Cancellable>> writeRequestTimeouts = new HashMap<>();
+    /** HashMap to store Cancellable for timeout on the updateRequest message send to the coordinator */
+    private final HashMap<UpdateClock, Cancellable> updateRequestTimeouts = new HashMap<>();
+    // ________________________________
+    // Coordinator specific variables
+    // ________________________________
+    /** Hashmap to count the number of ACK received for each message sent by the coordinator */
     private final Map<UpdateClock, Integer> UpdateACKCounter = new HashMap<>();
     /**
      * Constructor for Replica
@@ -161,17 +171,6 @@ public class Replica extends AbstractReplica {
     // =================================================================================
 
     private void onWriteRequest(AbstractClient.WriteRequest msg) {
-
-//        // schedule a Timeout message in specified time
-//        void setTimeout(int time) {
-//            getContext().system().scheduler().scheduleOnce(
-//                    Duration.create(time, TimeUnit.MILLISECONDS),
-//                    getSelf(),
-//                    new Timeout(), // the message to send
-//                    getContext().system().dispatcher(), getSelf()
-//            );
-//        }
-
         if (getSender() == msg.replica) {
             debug("Inserting the request inside my pending write queue");
             this.pendingWrites.add(msg);
@@ -189,15 +188,27 @@ public class Replica extends AbstractReplica {
             log("Sending an update request to the coordinator (ID: " + this.coordinatorID + ")" + " with content: {index:" + msg.index + ", value:" + msg.value + "}");
             ActorRef coordinator = this.replicas.get(this.coordinatorID);
             coordinator.tell(msg, this.getSelf());
+            this.writeRequestTimeouts.computeIfAbsent(msg, k -> new ArrayDeque<>())
+                    .add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeOut.TimeoutType.WriteRequest))); // TODO how much time to wait for coordinator?
         }
     }
 
     private void onUpdateRequest(Replica.UpdateRequest msg) {
         log("Received an Update request from coordinator with content: {index:"+msg.writeRequest.index+", value:"+msg.writeRequest.value+"}");
+        // cancel the WriteRequest timeout
+        Queue<Cancellable> timeouts = this.writeRequestTimeouts.get(msg.writeRequest);
+        if ( timeouts != null) {
+            timeouts.poll().cancel();
+            if (this.writeRequestTimeouts.get(msg.writeRequest).isEmpty()) {
+                this.writeRequestTimeouts.remove(msg.writeRequest);
+            }
+        }
         // add update to history
         history.put(msg.identifier, msg.writeRequest);
         debug("My history is"+history.keySet()+history.values());
         msg.coordinator.tell(new UpdateACK(msg.identifier), this.getSelf());
+        this.updateRequestTimeouts
+                .putIfAbsent(msg.identifier, setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeOut.TimeoutType.UpdateRequest))); // TODO how much time to wait for coordinator?
     }
 
     private void onUpdateACK(Replica.UpdateACK msg) {
@@ -224,6 +235,12 @@ public class Replica extends AbstractReplica {
 
     private void onWriteOK(Replica.WriteOK msg) {
         log("Received a WriteOK message from the coordinator, applying the update");
+        // cancel the UpdateRequest timeout
+        Cancellable timeout = this.updateRequestTimeouts.remove(msg.identifier);
+        if ( timeout != null) {
+            timeout.cancel();
+
+        }
         UpdateClock identifier = msg.identifier;
         AbstractClient.WriteRequest writeRequest = this.history.get(identifier);
         this.positions[writeRequest.index] = writeRequest.value;
