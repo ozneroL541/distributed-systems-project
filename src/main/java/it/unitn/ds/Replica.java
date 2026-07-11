@@ -481,7 +481,8 @@ public class Replica extends AbstractReplica {
                 CoordinatorElected coordinatorElected = new CoordinatorElected(bestCandidate, this.id);
                 this.sendToNextReplica(coordinatorElected);
             }
-        } else {
+        } else if (this.electionInProgress == null || msg.electionStarter < this.electionInProgress) {
+            this.electionInProgress = msg.electionStarter;
             msg.updateMsg(this);
             this.sendToNextReplica(msg);
         }
