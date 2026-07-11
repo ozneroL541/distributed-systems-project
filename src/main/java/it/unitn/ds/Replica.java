@@ -34,6 +34,11 @@ public class Replica extends AbstractReplica {
     private final Map<UpdateClock, AbstractClient.WriteRequest> waitingForWriteOK = new HashMap<>();
     /** Queue for pending write requests */
     private final Queue<ClientWrite> pendingWrites = new ArrayDeque<>();
+    /**
+     * Record to represent a write request from a client
+     * @param clientRef the reference of the client that sent the write request
+     * @param writeRequest the write request sent by the client
+     */
     private record ClientWrite(ActorRef clientRef, AbstractClient.WriteRequest writeRequest){ }
     /** HashMap to store Cancellable for timeout on the writeRequest message send to the coordinator */
     private final HashMap<AbstractClient.WriteRequest, Queue<Cancellable>> writeRequestTimeouts = new HashMap<>();
@@ -74,7 +79,6 @@ public class Replica extends AbstractReplica {
     public Replica(int id, int minLatency, int maxLatency, int coordinatorBeatInterval, Optional<ActorRef> listener) {
         super(id, minLatency, maxLatency, coordinatorBeatInterval, listener);
         this.updateClock = new UpdateClock();
-        // TODO: implement
     }
 
     public static Props props(int id, int minLatency, int maxLatency, int coordinatorBeatInterval) {
@@ -88,7 +92,6 @@ public class Replica extends AbstractReplica {
 
     @Override
     public int getSystemNumberOfActors() {
-        // TODO: implement
         //  return 0;
         return this.numberOfReplicas;
         //return this.replicas.size();
@@ -101,7 +104,6 @@ public class Replica extends AbstractReplica {
 
     @Override
     public void initSystem(InitSystem sysInit) {
-        // TODO: implement
         this.replicas = sysInit.group;
         this.numberOfReplicas = sysInit.group.size();
         int coordinator_id = sysInit.coordinator_id;
@@ -122,7 +124,6 @@ public class Replica extends AbstractReplica {
                 .match(CoordinatorElected.class,          this::onCoordinatorElected)
                 .match(ElectionAck.class,                 this::onElectionAck)
                 .match(CoordinatorHeartbeat.class,        this::onHeartbeat)
-                // TODO add your message handlers here .match(, )
                 .build();
     }
 
@@ -210,7 +211,8 @@ public class Replica extends AbstractReplica {
             ActorRef coordinator = this.replicas.get(this.coordinatorID);
             coordinator.tell(msg, this.getSelf());
             this.writeRequestTimeouts.computeIfAbsent(msg, k -> new ArrayDeque<>())
-                    .add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeOut.TimeoutType.WriteRequest))); // TODO how much time to wait for coordinator?
+                    .add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeOut.TimeoutType.WriteRequest)));
+                    // TODO how much time to wait for coordinator?
         }
     }
 
@@ -228,7 +230,8 @@ public class Replica extends AbstractReplica {
         waitingForWriteOK.put(msg.identifier, msg.writeRequest);
         msg.coordinator.tell(new UpdateACK(msg.identifier), this.getSelf());
         this.updateRequestTimeouts
-                .putIfAbsent(msg.identifier, setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeOut.TimeoutType.UpdateRequest))); // TODO how much time to wait for coordinator?
+                .putIfAbsent(msg.identifier, setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeOut.TimeoutType.UpdateRequest)));
+                // TODO how much time to wait for coordinator?
     }
 
     private void onUpdateACK(Replica.UpdateACK msg) {
