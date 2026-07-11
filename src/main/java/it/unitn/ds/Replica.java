@@ -109,6 +109,9 @@ public class Replica extends AbstractReplica {
         int coordinator_id = sysInit.coordinator_id;
         this.coordinatorID = coordinator_id;
         log("I set as coordinator: "+coordinator_id);
+        if (this.isCoordinator()) {
+            this.sendHeartbeat();
+        }
     }
 
     @Override
@@ -198,7 +201,7 @@ public class Replica extends AbstractReplica {
             this.pendingWrites.add(new ClientWrite(getSender(), msg));
         }
         log("Received a Write request by "+ getSender().path().name() + " with content: {index:"+msg.index+", value:"+msg.value+"}");
-        if (this.coordinatorID == this.id) {
+        if (this.isCoordinator()) {
             log("I'm the coordinator; Sending the update message");
             this.updateClock.incrementI();
             UpdateRequest updateRequest = new UpdateRequest(this.updateClock, this.getSelf(), msg);
@@ -439,7 +442,7 @@ public class Replica extends AbstractReplica {
      */
     private void onCoordinatorElected(CoordinatorElected msg) {
         this.coordinatorID = msg.newCoordinatorId;
-        if (msg.replicaId == this.id || this.electionInProgress == null) {
+        if (msg.replicaId == this.id || !this.isElectionInProgress()) {
             return;
         }
         if (msg.newCoordinatorId == this.id) {
@@ -449,7 +452,6 @@ public class Replica extends AbstractReplica {
         this.sendToNextReplica(msg);
         this.electionTimeouts.computeIfAbsent(this.nextReplicaID, k -> new ArrayDeque<>())
                 .add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeoutType.Election)));
-        
     }
     /**
      * Send an acknowledgment message to the sender of an election message.
@@ -481,7 +483,7 @@ public class Replica extends AbstractReplica {
                 CoordinatorElected coordinatorElected = new CoordinatorElected(bestCandidate, this.id);
                 this.sendToNextReplica(coordinatorElected);
             }
-        } else if (this.electionInProgress == null || msg.electionStarter < this.electionInProgress) {
+        } else if (!this.isElectionInProgress() || msg.electionStarter < this.electionInProgress) {
             this.electionInProgress = msg.electionStarter;
             msg.updateMsg(this);
             this.sendToNextReplica(msg);
@@ -557,13 +559,14 @@ public class Replica extends AbstractReplica {
      */
     private void startElection() {
         ElectionMessage electionMessage = new ElectionMessage(this.id, this.updateClock);
-        if (this.electionInProgress != null && this.electionInProgress <= this.id) {
+        if (this.isElectionInProgress() && this.electionInProgress <= this.id) {
             // An election is already in progress
             return;
         }
         this.electionInProgress = this.id;
         this.callbackOnElectionStarted(this.coordinatorID);
         this.sendToNextReplica(electionMessage);
+        debug("Starting an election with message: " + electionMessage.toString());
     }
     /**
      * CoordinatorHeartbeat
@@ -586,7 +589,7 @@ public class Replica extends AbstractReplica {
         long timeout = (long)COORDINATOR_BEAT_INTERVAL;
         // If this replica is the coordinator
         // set half the timeout to let it expire faster and trigger its own heartbeat
-        if (this.coordinatorID == this.id) {
+        if (this.isCoordinator()) {
             timeout /= 2;
         }
         // Cancel the previous heartbeat timeout
@@ -602,7 +605,7 @@ public class Replica extends AbstractReplica {
      * Otherwise, handle the coordinator crash.
      */
     private void onHeartbeatTimeout() {
-        if (this.coordinatorID == this.id) {
+        if (this.isCoordinator()) {
             this.sendHeartbeat();
         } else {
             this.onCoordinatorCrash();
@@ -613,5 +616,19 @@ public class Replica extends AbstractReplica {
      */
     private void sendHeartbeat() {
         this.multicast(new CoordinatorHeartbeat(this.id));
+    }
+    /**
+     * Check if this replica is the coordinator.
+     * @return true if this replica is the coordinator, false otherwise
+     */
+    public boolean isCoordinator() {
+        return this.coordinatorID == this.id;
+    }
+    /**
+     * Check if an election is in progress.
+     * @return true if an election is in progress, false otherwise
+     */
+    public boolean isElectionInProgress() {
+        return this.electionInProgress != null;
     }
 }
