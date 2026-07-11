@@ -1,5 +1,11 @@
 package it.unitn.ds;
 
+/**
+ * UpdateClock
+ * Logical clock used to order updates in the system. It consists of an epoch number and a sequence number.
+ * The epoch number is incremented when a new coordinator is elected, and the sequence number is incremented for each update made by the coordinator.
+ * The clock can be synchronized with another clock to ensure that updates are applied in the correct order across replicas.
+ */
 class UpdateClock implements Comparable<UpdateClock> {
     /** Epoch number */
     private int e;

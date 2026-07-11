@@ -375,6 +375,13 @@ public class Replica extends AbstractReplica {
         this.startElection();
     }
     /**
+     * Handle the event when this replica becomes the coordinator.
+     */
+    private void onBecameCoordinator() {
+        log("I am the new coordinator");
+        //TODO: Implement the logic for when this replica becomes the coordinator, such as sending heartbeats or managing pending writes.
+    }
+    /**
      * Handle a coordinator elected message by updating the coordinator ID and
      * forwarding the message to the next replica if necessary.
      * @param msg the coordinator elected message
@@ -384,8 +391,13 @@ public class Replica extends AbstractReplica {
         if (msg.replicaId == this.id || this.electionInProgress == null) {
             return;
         }
+        this.callbackOnCoordinatorElected(this.coordinatorID);
+        if (msg.newCoordinatorId == this.id) {
+            this.onBecameCoordinator();
+        }
         this.electionInProgress = null;
         this.sendToNextReplica(msg);
+        // TODO: If the next replica doesn't respond, we should try the next one in the ring. This is not implemented yet.
     }
     /**
      * Send an acknowledgment message to the sender of an election message.
@@ -466,8 +478,7 @@ public class Replica extends AbstractReplica {
      * @param msg the message to send
      */
     private void sendToNextReplica(Serializable msg) {
-        int nextReplicaID = this.getNextAliveReplicaID();
-        ActorRef nextReplica = this.replicas.get(nextReplicaID);
+        ActorRef nextReplica = this.replicas.get(this.getNextAliveReplicaID());
         nextReplica.tell(msg, this.getSelf());
         // TODO: If the next replica doesn't respond, we should try the next one in the ring. This is not implemented yet.
     }
