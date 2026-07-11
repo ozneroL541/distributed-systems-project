@@ -191,6 +191,17 @@ public class Replica extends AbstractReplica {
         }
     }
 
+    public static class ClientACK implements Serializable {
+        ActorRef actorRef;
+        Serializable msg;
+
+        public ClientACK(ActorRef actorRef, Serializable msg) {
+            this.actorRef = actorRef;
+            this.msg = msg;
+
+        }
+    }
+
     // =================================================================================
     // Messages handler functions
     // =================================================================================
@@ -214,7 +225,7 @@ public class Replica extends AbstractReplica {
             ActorRef coordinator = this.replicas.get(this.coordinatorID);
             coordinator.tell(msg, this.getSelf());
             this.writeRequestTimeouts.computeIfAbsent(msg, k -> new ArrayDeque<>())
-                    .add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeOut.TimeoutType.WriteRequest)));
+                    .add(setTimeout(this.getMaxLatencyPlusTolerance()+500000,new TimeOut(TimeOut.TimeoutType.WriteRequest)));
                     // TODO how much time to wait for coordinator?
         }
     }
@@ -233,7 +244,7 @@ public class Replica extends AbstractReplica {
         waitingForWriteOK.put(msg.identifier, msg.writeRequest);
         msg.coordinator.tell(new UpdateACK(msg.identifier), this.getSelf());
         this.updateRequestTimeouts
-                .putIfAbsent(msg.identifier, setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeOut.TimeoutType.UpdateRequest)));
+                .putIfAbsent(msg.identifier, setTimeout(this.getMaxLatencyPlusTolerance()+1000000,new TimeOut(TimeOut.TimeoutType.UpdateRequest)));
                 // TODO how much time to wait for coordinator?
     }
 
@@ -284,7 +295,8 @@ public class Replica extends AbstractReplica {
                 .findFirst();
         if (pendingWrite.isPresent()) {
             pendingWrite.get().clientRef.tell(
-                    new AbstractClient.WriteResult(true, writeRequest.index, writeRequest.value, this.id),
+                    new Replica.ClientACK(this.getSelf(), new AbstractClient.WriteResult(true, writeRequest.index, writeRequest.value, this.id)),
+//                    new AbstractClient.WriteResult(true, writeRequest.index, writeRequest.value, this.id),
                     this.getSelf());
             this.pendingWrites.remove(pendingWrite.get());
         }
@@ -293,7 +305,8 @@ public class Replica extends AbstractReplica {
     private void onReadRequest(AbstractClient.ReadRequest msg) {
         debug("Received a Read request from client");
         int position = this.positions[msg.index];
-        getSender().tell(new AbstractClient.ReadResult(true,msg.index, position, this.id), this.getSelf());
+        getSender().tell( new Replica.ClientACK(this.getSelf(), new AbstractClient.ReadResult(true,msg.index, position, this.id)), this.getSelf());
+//                , this.getSelf());
 
     }
 

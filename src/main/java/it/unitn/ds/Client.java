@@ -16,9 +16,9 @@ public class Client extends AbstractClient {
      * ActorRef is the reference of the Replica inside AKKA
      */
     /** HashMap to store Cancellable for timeout on the writeRequest message send to the coordinator */
-    private final Queue<Cancellable> sendWriteRequestTimeouts = new ArrayDeque<>();
+    private final HashMap<ActorRef, Queue<Cancellable>> sendWriteRequestTimeouts = new HashMap<>();
     /** HashMap to store Cancellable for timeout on the writeRequest message send to the coordinator */
-    private final Queue<Cancellable> sendReadRequestTimeouts = new ArrayDeque<>();
+    private final HashMap<ActorRef, Queue<Cancellable>> sendReadRequestTimeouts = new HashMap<>();
 
     Client(long readTimeoutDelay, long writeTimeoutDelay, Optional<ActorRef> defaultTargetReplica, Optional<ActorRef> listener) {
         super(readTimeoutDelay, writeTimeoutDelay, listener, defaultTargetReplica);
@@ -39,26 +39,18 @@ public class Client extends AbstractClient {
     // =================================================================================
     // Helper functions
     // =================================================================================
-    /**
-     * Helper function to schedule a timeout
-     * @param time the time to wait before sending the timeout message (in milliseconds)
-     * @param timeOut the timeOut message to schedule
-     * @return A cancellable reference to the timeout that can be used to cancel the timeout if needed
-     */
-    Cancellable setTimeout(long time, TimeOut timeOut) {
-        return getContext().system().scheduler().scheduleOnce(
-                Duration.create(time, TimeUnit.MILLISECONDS),
-                getSelf(),
-                timeOut,
-                getContext().system().dispatcher(), getSelf()
-        );
-    }
-
     @Override
     public void sendRead(ActorRef replica, int index) {
         log("Sending a Read request to:"+ replica.path().name());
         replica.tell(new AbstractClient.ReadRequest(index, replica), this.getSelf());
-        this.sendReadRequestTimeouts.add(setTimeout(this.getReadTimeoutDelay(),new TimeOut(TimeOut.TimeoutType.SendRead))); // TODO how much time to wait for coordinator?
+        Queue<Cancellable> queue = this.sendReadRequestTimeouts.computeIfAbsent(replica, k -> new ArrayDeque<>());
+        queue.add(getContext().system().scheduler().scheduleOnce(
+                Duration.create(this.getReadTimeoutDelay(),TimeUnit.MILLISECONDS),
+                getSelf(),
+                new AbstractClient.ReadTimeout(this.getSelf(),replica,index),
+                getContext().system().dispatcher(), getSelf()
+        ));
+//        this.sendReadRequestTimeouts.add(setTimeout(this.getReadTimeoutDelay(),new TimeOut(TimeOut.TimeoutType.SendRead))); // TODO how much time to wait for coordinator?
 
         // TODO: implement
     }
@@ -67,7 +59,13 @@ public class Client extends AbstractClient {
     public void sendWrite(ActorRef replica, int index, int value) {
         log("Sending a Write request to: " + replica.path().name() +" with content: {index:"+index+", value:"+value+"}");
         replica.tell(new AbstractClient.WriteRequest(index, value, replica),this.getSelf());
-        this.sendWriteRequestTimeouts.add(setTimeout(this.getWriteTimeoutDelay(),new TimeOut(TimeOut.TimeoutType.SendWrite))); // TODO how much time to wait for coordinator?
+        Queue<Cancellable> queue = this.sendWriteRequestTimeouts.computeIfAbsent(replica, k -> new ArrayDeque<>());
+        queue.add(getContext().system().scheduler().scheduleOnce(
+                Duration.create(this.getWriteTimeoutDelay(),TimeUnit.MILLISECONDS),
+                getSelf(),
+                new AbstractClient.WriteTimeout(this.getSelf(),replica,index, value),
+                getContext().system().dispatcher(), getSelf()
+        ));
         // TODO: implement
     }
 
@@ -75,57 +73,53 @@ public class Client extends AbstractClient {
     public final Receive createReceive() {
         return createBaseReceiveBuilder()
                 // onWriteRequest already matched by the abstract class
-                .match(AbstractClient.ReadResult.class,  this::onReadResult)
-                .match(AbstractClient.WriteResult.class, this::onWriteResult)
-                .match(TimeOut.class,                    this::onTimeOut)
+//                .match(AbstractClient.ReadResult.class,   this::onReadResult)
+                .match(Replica.ClientACK.class,  this::onResult)
+                .match(AbstractClient.WriteTimeout.class, this::onWriteTimeOut)
+                .match(AbstractClient.ReadTimeout.class,  this::onReadTimeOut)
                 // TODO add your message handlers here .match(, )
                 .build();
     }
 
-    private void onReadResult(AbstractClient.ReadResult msg) {
+//    private void onReadResult(AbstractClient.ReadResult msg) {
+//
+//        key = msg
+//        if ( timeout != null) {
+//            timeout.cancel();
+//        }
+//        callbackOnReadResult(msg);
+//    }
+//
+//    private void onWriteResult(AbstractClient.WriteResult msg) {
+//        Cancellable timeout = this.sendWriteRequestTimeouts.poll();
+//        if ( timeout != null) {
+//            timeout.cancel();
+//        }
+//        callbackOnWriteResult(msg);
+//    }
+    private void onResult(Replica.ClientACK msg) {
+        ActorRef key = msg.actorRef;
+        if (msg.msg instanceof WriteResult) {
+            callbackOnWriteResult((WriteResult) msg.msg);
+            this.sendWriteRequestTimeouts.remove(key);
+        } else if (msg.msg instanceof  ReadResult) {
+            callbackOnReadResult((ReadResult) msg.msg);
 
-        Cancellable timeout = this.sendReadRequestTimeouts.poll();
-        if ( timeout != null) {
-            timeout.cancel();
         }
-        callbackOnReadResult(msg);
     }
 
-    private void onWriteResult(AbstractClient.WriteResult msg) {
-        Cancellable timeout = this.sendWriteRequestTimeouts.poll();
-        if ( timeout != null) {
-            timeout.cancel();
-        }
-        callbackOnWriteResult(msg);
-    }
+    private void onWriteTimeOut(AbstractClient.WriteTimeout msg) {
+        callbackOnWriteTimeout(msg);
+        ActorRef key = msg.replica;
+        Queue<Cancellable> test = this.sendWriteRequestTimeouts.remove(key);
+        debug(" il test è ull:"+test);
 
-    /**
-     * Handle a timeout message
-     * @param msg the timeout message
-     */
-    private void onTimeOut(TimeOut msg) {
-        switch (msg.type) {
-            case TimeOut.TimeoutType.SendRead:
-                log("Timeout on read request");
-                break;
-            case TimeOut.TimeoutType.SendWrite:
-                log("Timeout on write request");
-                break;
-            case TimeOut.TimeoutType.UpdateRequest:
-                log("Timeout on update request");
-                break;
-            case TimeOut.TimeoutType.WriteRequest:
-                log("Timeout on write request");
-                break;
-            case TimeOut.TimeoutType.Heartbeat:
-                log("Timeout on heartbeat");
-                break;
-            case TimeOut.TimeoutType.Election:
-                log("Timeout on election");
-                break;
-            default:
-                break;
-        }
+    }
+    private void onReadTimeOut(AbstractClient.ReadTimeout msg) {
+        callbackOnReadTimeout(msg);
+        ActorRef key = msg.replica;
+        Queue<Cancellable> test = this.sendReadRequestTimeouts.remove(key);
+        debug(" il test è fds:"+test);
     }
 
 }
