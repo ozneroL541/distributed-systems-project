@@ -89,8 +89,9 @@ public class Replica extends AbstractReplica {
     @Override
     public int getSystemNumberOfActors() {
         // TODO: implement
-//        return 0;
+        //  return 0;
         return this.numberOfReplicas;
+        //return this.replicas.size();
     }
 
     @Override
