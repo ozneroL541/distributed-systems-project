@@ -16,9 +16,9 @@ public class Client extends AbstractClient {
      * ActorRef is the reference of the Replica inside AKKA
      */
     /** HashMap to store Cancellable for timeout on the writeRequest message send to the coordinator */
-    private final HashMap<ActorRef, Queue<Cancellable>> sendWriteRequestTimeouts = new HashMap<>();
+    private final HashMap<String, Queue<Cancellable>> sendWriteRequestTimeouts = new HashMap<>();
     /** HashMap to store Cancellable for timeout on the writeRequest message send to the coordinator */
-    private final HashMap<ActorRef, Queue<Cancellable>> sendReadRequestTimeouts = new HashMap<>();
+    private final HashMap<String, Queue<Cancellable>> sendReadRequestTimeouts = new HashMap<>();
 
     Client(long readTimeoutDelay, long writeTimeoutDelay, Optional<ActorRef> defaultTargetReplica, Optional<ActorRef> listener) {
         super(readTimeoutDelay, writeTimeoutDelay, listener, defaultTargetReplica);
@@ -43,7 +43,7 @@ public class Client extends AbstractClient {
     public void sendRead(ActorRef replica, int index) {
         log("Sending a Read request to:"+ replica.path().name());
         replica.tell(new AbstractClient.ReadRequest(index, replica), this.getSelf());
-        Queue<Cancellable> queue = this.sendReadRequestTimeouts.computeIfAbsent(replica, k -> new ArrayDeque<>());
+        Queue<Cancellable> queue = this.sendReadRequestTimeouts.computeIfAbsent(replica.path().name(), k -> new ArrayDeque<>());
         queue.add(getContext().system().scheduler().scheduleOnce(
                 Duration.create(this.getReadTimeoutDelay(),TimeUnit.MILLISECONDS),
                 getSelf(),
@@ -59,7 +59,7 @@ public class Client extends AbstractClient {
     public void sendWrite(ActorRef replica, int index, int value) {
         log("Sending a Write request to: " + replica.path().name() +" with content: {index:"+index+", value:"+value+"}");
         replica.tell(new AbstractClient.WriteRequest(index, value, replica),this.getSelf());
-        Queue<Cancellable> queue = this.sendWriteRequestTimeouts.computeIfAbsent(replica, k -> new ArrayDeque<>());
+        Queue<Cancellable> queue = this.sendWriteRequestTimeouts.computeIfAbsent(replica.path().name(), k -> new ArrayDeque<>());
         queue.add(getContext().system().scheduler().scheduleOnce(
                 Duration.create(this.getWriteTimeoutDelay(),TimeUnit.MILLISECONDS),
                 getSelf(),
@@ -98,28 +98,40 @@ public class Client extends AbstractClient {
 //        callbackOnWriteResult(msg);
 //    }
     private void onResult(Replica.ClientACK msg) {
-        ActorRef key = msg.actorRef;
+        String key = msg.actorRef.path().name();
+//        Cancellable timeout;
         if (msg.msg instanceof WriteResult) {
             callbackOnWriteResult((WriteResult) msg.msg);
-            this.sendWriteRequestTimeouts.remove(key);
+            this.sendWriteRequestTimeouts.get(key).remove().cancel();
+            if (this.sendWriteRequestTimeouts.get(key).isEmpty()) {
+                this.sendWriteRequestTimeouts.remove(key);
+            }
         } else if (msg.msg instanceof  ReadResult) {
             callbackOnReadResult((ReadResult) msg.msg);
+            this.sendReadRequestTimeouts.get(key).remove().cancel();
+            if (this.sendReadRequestTimeouts.get(key).isEmpty()){
+                this.sendReadRequestTimeouts.remove(key);
+            }
 
         }
     }
 
     private void onWriteTimeOut(AbstractClient.WriteTimeout msg) {
         callbackOnWriteTimeout(msg);
-        ActorRef key = msg.replica;
-        Queue<Cancellable> test = this.sendWriteRequestTimeouts.remove(key);
-        debug(" il test è ull:"+test);
+        String key = msg.replica.path().name();
+        this.sendWriteRequestTimeouts.get(key).remove().cancel();
+        if (this.sendWriteRequestTimeouts.get(key).isEmpty()) {
+            this.sendWriteRequestTimeouts.remove(key);
+        }
 
     }
     private void onReadTimeOut(AbstractClient.ReadTimeout msg) {
         callbackOnReadTimeout(msg);
-        ActorRef key = msg.replica;
-        Queue<Cancellable> test = this.sendReadRequestTimeouts.remove(key);
-        debug(" il test è fds:"+test);
+        String key = msg.replica.path().name();
+        this.sendReadRequestTimeouts.get(key).remove().cancel();
+        if (this.sendReadRequestTimeouts.get(key).isEmpty()){
+            this.sendReadRequestTimeouts.remove(key);
+        }
     }
 
 }
