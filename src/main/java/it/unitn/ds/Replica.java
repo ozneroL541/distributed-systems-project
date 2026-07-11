@@ -425,6 +425,7 @@ public class Replica extends AbstractReplica {
      */
     private void onBecameCoordinator() {
         this.sendHeartbeat();
+        // TODO: implement any additional logic needed when this replica becomes the coordinator
     }
     /**
      * Handle a coordinator elected message by updating the coordinator ID and
