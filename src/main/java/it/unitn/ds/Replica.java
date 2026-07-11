@@ -40,6 +40,14 @@ public class Replica extends AbstractReplica {
     // ________________________________
     /** Hashmap to count the number of ACK received for each message sent by the coordinator */
     private final Map<UpdateClock, Integer> UpdateACKCounter = new HashMap<>();
+    /** 
+     * Current election status, 
+     * null if no election is in progress 
+     * else the ID of the election starter
+     */
+    private Integer electionInProgress = null;
+    /** The ID of the next replica in a ring topology */
+    private Integer nextReplicaID = null;
     /**
      * Constructor for Replica
      * @param id the id of the replica
@@ -74,7 +82,7 @@ public class Replica extends AbstractReplica {
     public int getSystemNumberOfActors() {
         // TODO: implement
 //        return 0;
-        return this.replicas.size();
+        return this.numberOfReplicas;
     }
 
     @Override
@@ -101,6 +109,9 @@ public class Replica extends AbstractReplica {
                 .match(Replica.UpdateACK.class,           this::onUpdateACK)
                 .match(Replica.WriteOK.class,             this::onWriteOK)
                 .match(TimeOut.class,                     this::onTimeOut)
+                .match(ElectionMessage.class,             this::onElectionMessage)
+                .match(CoordinatorElected.class,          this::onCoordinatorElected)
+                .match(ElectionAck.class,                 this::onElectionAck)
                 // TODO add your message handlers here .match(, )
                 .build();
     }
@@ -281,19 +292,115 @@ public class Replica extends AbstractReplica {
                 log("Timeout on write request");
                 break;
             case TimeOut.TimeoutType.UpdateRequest:
-                log("Timeout on update request");
+                this.onCoordinatorCrash();
                 break;
             case TimeOut.TimeoutType.WriteRequest:
-                log("Timeout on write request");
+                this.onCoordinatorCrash();
                 break;
             case TimeOut.TimeoutType.Heartbeat:
-                log("Timeout on heartbeat");
+                this.onCoordinatorCrash();
                 break;
             case TimeOut.TimeoutType.Election:
-                log("Timeout on election");
+                this.onElectionTimout();
                 break;
             default:
                 break;
+        }
+    }
+    /**
+     * ElectionMessage
+     * This class represents a message used in the election process to determine the coordinator among replicas.
+     */
+    class ElectionMessage implements Serializable {
+        /** The ID of the node that started the election */
+        public final int electionStarter;
+        /** A map of all candidates in the election, with their IDs as keys and clock values as values */
+        public final Map<Integer, UpdateClock> candidates = new HashMap<Integer, UpdateClock>();
+        /** The ID of the node that send the message */
+        public int msgSenderId;
+        /**
+         * Constructor for ElectionMessage
+         * @param electionStarter the ID of the node that started the election
+         * @param nodeClock the clock value of the node that started the election
+         */
+        public ElectionMessage(int electionStarter, UpdateClock nodeClock) {
+            this.electionStarter = electionStarter;
+            this.msgSenderId = electionStarter;
+            this.candidates.put(electionStarter, nodeClock);
+        }
+        /**
+         * Update the message with the information of a replica
+         * @param replica the replica that updates the message
+         */
+        public void updateMsg(Replica replica) {
+            this.candidates.put(replica.id, replica.updateClock);
+            this.msgSenderId = replica.id;
+            this.deleteCrashedNodesFromCandidates(replica.replicas);
+        }
+        /**
+         * Get the best candidate for the election based on the highest clock and ID.
+         * The best candidate is the one with the highest clock value, 
+         * and in case of a tie, the one with the highest ID.
+         * @return the ID of the best candidate, or null if there are no candidates
+         */
+        public Integer getBestCandidate() {
+            /** Best candidate */
+            Integer bestCandidate = null;
+            /** List of all candidates with the same best clock */
+            List<Integer> candidatesList = null;
+            /** Best clock in the election */
+            UpdateClock bestClock = candidates.values().stream().max(UpdateClock::compareTo).orElse(null);
+            // If there is no best clock, return null
+            if (bestClock == null) {
+                return null;
+            }
+            // Get all candidates with the best clock
+            candidatesList = candidates.entrySet().stream()
+                    .filter(entry -> entry.getValue().equals(bestClock))
+                    .map(Map.Entry::getKey)
+                    .toList();
+            if (candidatesList.isEmpty()) {
+                return null;
+            }
+            // Get the candidate with the highest ID between the candidates with the best clock
+            bestCandidate = candidatesList.stream().max(Integer::compareTo).orElse(null);
+            return bestCandidate;
+        }
+        /**
+         * Check if the election is over based on the election starter.
+         * @param electionInitiator the ID of the election initiator
+         * @return true if the election is over, false otherwise
+         */
+        public boolean isElectionOver(Integer electionInitiator) {
+            if (electionInitiator == null) {
+                return false;
+            }
+            return this.electionStarter == electionInitiator;
+        }
+        /**
+         * Delete crashed nodes from the election message 
+         * based on the current list of replicas.
+         * Delete the id and the clock of the crashed nodes from the election message
+         * where the id is not present in the list of alive replicas.
+         * @param replicas list of alive replicas according to the current node
+         */
+        public void deleteCrashedNodesFromCandidates(Map<Integer, ActorRef> replicas) {
+            this.candidates.keySet().removeIf(id -> !replicas.containsKey(id));
+        }
+        /**
+         * Delete crashed nodes from replicas list based on the current list of candidates.
+         * @param replicas list of alive replicas according to the current node
+         * @return the updated list of candidates after removing crashed nodes
+         */
+        public Map<Integer, ActorRef> deleteCrashedNodesFromList(Map<Integer, ActorRef> replicas) {
+            replicas.keySet().removeIf(id -> !this.candidates.containsKey(id));
+            return replicas;
+        }
+    }
+    public static class ElectionAck implements Serializable {
+        public final int ackSenderId;
+        public ElectionAck(int ackSenderId) {
+            this.ackSenderId = ackSenderId;
         }
     }
     /**
@@ -304,7 +411,67 @@ public class Replica extends AbstractReplica {
         this.nodeCrashed(this.coordinatorID);
         this.startElection();
     }
-
+    /**
+     * Handle the event when this replica becomes the coordinator.
+     */
+    private void onBecameCoordinator() {
+        log("I am the new coordinator");
+        //TODO: Implement the logic for when this replica becomes the coordinator, such as sending heartbeats or managing pending writes.
+    }
+    /**
+     * Handle a coordinator elected message by updating the coordinator ID and
+     * forwarding the message to the next replica if necessary.
+     * @param msg the coordinator elected message
+     */
+    private void onCoordinatorElected(CoordinatorElected msg) {
+        this.coordinatorID = msg.newCoordinatorId;
+        if (msg.replicaId == this.id || this.electionInProgress == null) {
+            return;
+        }
+        this.callbackOnCoordinatorElected(this.coordinatorID);
+        if (msg.newCoordinatorId == this.id) {
+            this.onBecameCoordinator();
+        }
+        this.electionInProgress = null;
+        this.sendToNextReplica(msg);
+        // TODO: If the next replica doesn't respond, we should try the next one in the ring. This is not implemented yet.
+    }
+    /**
+     * Send an acknowledgment message to the sender of an election message.
+     * @param msg the election message
+     */
+    private void sendAckToSender(ElectionMessage msg) {
+        /** Acknowledgment message */
+        ElectionAck ack = new ElectionAck(this.id);
+        /** Sender ID */
+        Integer senderId = msg.msgSenderId;
+        if (senderId != null && this.replicas.containsKey(senderId)) {
+            ActorRef senderReplica = this.replicas.get(senderId);
+            senderReplica.tell(ack, this.getSelf());
+        }
+    }
+    /**
+     * Handle an election message by updating the election state and 
+     * forwarding the message to the next replica.
+     * @param msg the election message
+     */
+    private void onElectionMessage(ElectionMessage msg) {
+        if (msg.isElectionOver(electionInProgress)) {
+            this.electionInProgress = null;
+            /** Best candidate for coordinator */
+            Integer bestCandidate = msg.getBestCandidate();
+            if (bestCandidate != null) {
+                this.replicas = msg.deleteCrashedNodesFromList(this.replicas);
+                /** Coordinator elected message */
+                CoordinatorElected coordinatorElected = new CoordinatorElected(bestCandidate, this.id);
+                this.sendToNextReplica(coordinatorElected);
+            }
+        } else {
+            msg.updateMsg(this);
+            this.sendToNextReplica(msg);
+        }
+        this.sendAckToSender(msg);
+    }
     /**
      * Handle a node crash by removing it from the list of replicas.
      * @param id the id of the crashed node
@@ -317,28 +484,38 @@ public class Replica extends AbstractReplica {
      * @param id the current replica ID
      * @return the next replica ID
      */
-    private int nextReplicaID(int id) {
+    private int correctNextReplicaID(int id) {
         return (id + 1) % this.numberOfReplicas;
     }
     /**
      * Get the next alive replica ID in a ring topology, skipping crashed nodes.
      * @return the next alive replica ID
      */
-    private int getNextAliveReplicaID() {
-        /** Proposed next replica ID */
-        int nextReplicaID = this.id;
-        do {
-            nextReplicaID = nextReplicaID(nextReplicaID);
-        } while (!this.replicas.containsKey(nextReplicaID));
-        return nextReplicaID;
+    private synchronized int getNextAliveReplicaID() {
+        if (this.replicas.size() == 0) {
+            throw new IllegalStateException("No alive replicas available");
+        }
+        if (this.nextReplicaID == null) {
+            this.nextReplicaID = this.correctNextReplicaID(this.id + 1);
+        }
+        while (!this.replicas.containsKey(this.nextReplicaID)) {
+            this.nextReplicaID = this.correctNextReplicaID(this.nextReplicaID + 1);
+        } 
+        return this.nextReplicaID;
+    }
+    private void onElectionTimout() {
+        debug("Election timeout, starting a new election");
+        this.startElection();
+    }
+    private void onElectionAck(ElectionAck msg) {
+        debug("Recived an ElectionAck from "+msg.ackSenderId);
     }
     /**
      * Send a message to the next alive replica in a ring topology.
      * @param msg the message to send
      */
     private void sendToNextReplica(Serializable msg) {
-        int nextReplicaID = this.getNextAliveReplicaID();
-        ActorRef nextReplica = this.replicas.get(nextReplicaID);
+        ActorRef nextReplica = this.replicas.get(this.getNextAliveReplicaID());
         nextReplica.tell(msg, this.getSelf());
         // TODO: If the next replica doesn't respond, we should try the next one in the ring. This is not implemented yet.
     }
@@ -346,7 +523,13 @@ public class Replica extends AbstractReplica {
      * Start an election.
      */
     private void startElection() {
-        ElectionStarted electionStarted = new ElectionStarted(this.id, this.coordinatorID);
-        this.sendToNextReplica(electionStarted);
+        ElectionMessage electionMessage = new ElectionMessage(this.id, this.updateClock);
+        if (this.electionInProgress != null && this.electionInProgress <= this.id) {
+            // An election is already in progress
+            return;
+        }
+        this.electionInProgress = this.id;
+        this.callbackOnElectionStarted(this.coordinatorID);
+        this.sendToNextReplica(electionMessage);
     }
 }
