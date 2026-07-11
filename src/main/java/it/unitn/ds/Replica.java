@@ -520,8 +520,9 @@ public class Replica extends AbstractReplica {
      * @return the next alive replica ID
      */
     private synchronized int getNextAliveReplicaID() {
-        if (this.replicas.size() == 0) {
-            throw new IllegalStateException("No alive replicas available");
+        if (this.replicas == null || this.replicas.isEmpty()) {
+            debug("No replicas available. Returning -1 as next alive replica ID.");
+            return this.nextReplicaID;
         }
         if (this.nextReplicaID == null) {
             this.nextReplicaID = this.correctNextReplicaID(this.id + 1);
@@ -558,8 +559,12 @@ public class Replica extends AbstractReplica {
      * @param msg the message to send
      */
     private void sendToNextReplica(Serializable msg) {
-        ActorRef nextReplica = this.replicas.get(this.getNextAliveReplicaID());
-        nextReplica.tell(msg, this.getSelf());
+        try {
+            ActorRef nextReplica = this.replicas.get(this.getNextAliveReplicaID());
+            nextReplica.tell(msg, this.getSelf());
+        } catch (Exception e) {
+            debug("Error while sending message to next replica: " + e.getMessage());
+        }
         // Set a timeout for the next replica to respond to the election message
         this.electionTimeouts.computeIfAbsent(msg, k -> new ArrayDeque<>())
                 .add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeoutType.Election)));
