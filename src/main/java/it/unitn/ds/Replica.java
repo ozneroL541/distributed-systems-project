@@ -37,9 +37,12 @@ public class Replica extends AbstractReplica {
     private record ClientWrite(ActorRef clientRef, AbstractClient.WriteRequest writeRequest){ }
     /** HashMap to store Cancellable for timeout on the writeRequest message send to the coordinator */
     private final HashMap<AbstractClient.WriteRequest, Queue<Cancellable>> writeRequestTimeouts = new HashMap<>();
+    /** HashMap to store Cancellable for timeout on the election message send to the coordinator */
     private final HashMap<Serializable, Queue<Cancellable>> electionTimeouts = new HashMap<>();
     /** HashMap to store Cancellable for timeout on the updateRequest message send to the coordinator */
     private final HashMap<UpdateClock, Cancellable> updateRequestTimeouts = new HashMap<>();
+    /** Cancellable for timeout on the coordinator heartbeat */
+    private Cancellable coordinatorHeartbeatTimeout = null;
     // ________________________________
     // Coordinator specific variables
     // ________________________________
@@ -117,6 +120,7 @@ public class Replica extends AbstractReplica {
                 .match(ElectionMessage.class,             this::onElectionMessage)
                 .match(CoordinatorElected.class,          this::onCoordinatorElected)
                 .match(ElectionAck.class,                 this::onElectionAck)
+                .match(CoordinatorHeartbeat.class,        this::onHeartbeat)
                 // TODO add your message handlers here .match(, )
                 .build();
     }
@@ -300,8 +304,10 @@ public class Replica extends AbstractReplica {
                 break;
             case TimeOut.TimeoutType.UpdateRequest:
             case TimeOut.TimeoutType.WriteRequest:
-            case TimeOut.TimeoutType.Heartbeat:
                 this.onCoordinatorCrash();
+                break;
+            case TimeOut.TimeoutType.Heartbeat:
+                this.onHeartbeatTimeout();
                 break;
             case TimeOut.TimeoutType.Election:
                 this.onElectionTimeout();
@@ -418,8 +424,7 @@ public class Replica extends AbstractReplica {
      * Handle the event when this replica becomes the coordinator.
      */
     private void onBecameCoordinator() {
-        log("I am the new coordinator");
-        //TODO: Implement the logic for when this replica becomes the coordinator, such as sending heartbeats or managing pending writes.
+        this.sendHeartbeat();
     }
     /**
      * Handle a coordinator elected message by updating the coordinator ID and
@@ -526,7 +531,7 @@ public class Replica extends AbstractReplica {
      * @param msg the election acknowledgment message
      */
     private void onElectionAck(ElectionAck msg) {
-        debug("Recived an ElectionAck");
+        debug("Received an ElectionAck");
         this.electionTimeouts.computeIfAbsent(msg.electionMessage, k -> new ArrayDeque<>())
                 .poll().cancel();
     }
@@ -553,5 +558,54 @@ public class Replica extends AbstractReplica {
         this.electionInProgress = this.id;
         this.callbackOnElectionStarted(this.coordinatorID);
         this.sendToNextReplica(electionMessage);
+    }
+    /**
+     * CoordinatorHeartbeat
+     * This class represents a heartbeat message sent by the coordinator to indicate that it is alive.
+     */
+    public static class CoordinatorHeartbeat implements Serializable {
+        /** The ID of the coordinator sending the heartbeat */
+        public final int coordinatorId;
+        /** The timestamp of the heartbeat */
+        public CoordinatorHeartbeat(int coordinatorId) {
+            this.coordinatorId = coordinatorId;
+        }
+    }
+    /**
+     * Handle a heartbeat message from the coordinator.
+     * @param msg the heartbeat message
+     */
+    private void onHeartbeat(CoordinatorHeartbeat msg) {
+        /** Handle a heartbeat message from the coordinator */
+        long timeout = (long)COORDINATOR_BEAT_INTERVAL;
+        // If this replica is the coordinator
+        // set half the timeout to let it expire faster and trigger its own heartbeat
+        if (this.coordinatorID == this.id) {
+            timeout /= 2;
+        }
+        // Cancel the previous heartbeat timeout
+        if (this.coordinatorHeartbeatTimeout != null) {
+            this.coordinatorHeartbeatTimeout.cancel();
+        }
+        // Set a new heartbeat timeout
+        this.coordinatorHeartbeatTimeout = this.setTimeout(timeout, new TimeOut(TimeoutType.Heartbeat));
+    }
+    /**
+     * Handle a heartbeat timeout.
+     * If the coordinator is this replica, send a heartbeat message.
+     * Otherwise, handle the coordinator crash.
+     */
+    private void onHeartbeatTimeout() {
+        if (this.coordinatorID == this.id) {
+            this.sendHeartbeat();
+        } else {
+            this.onCoordinatorCrash();
+        }
+    }
+    /**
+     * Send a heartbeat message to all replicas.
+     */
+    private void sendHeartbeat() {
+        this.multicast(new CoordinatorHeartbeat(this.id));
     }
 }
