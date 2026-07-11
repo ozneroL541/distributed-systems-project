@@ -3,6 +3,7 @@ package it.unitn.ds;
 import akka.actor.ActorRef;
 import akka.actor.Cancellable;
 import akka.actor.Props;
+import it.unitn.ds.TimeOut.TimeoutType;
 import scala.concurrent.duration.Duration;
 
 import java.io.Serializable;
@@ -33,6 +34,7 @@ public class Replica extends AbstractReplica {
     private final Queue<AbstractClient.WriteRequest> pendingWrites = new ArrayDeque<>();
     /** HashMap to store Cancellable for timeout on the writeRequest message send to the coordinator */
     private final HashMap<AbstractClient.WriteRequest, Queue<Cancellable>> writeRequestTimeouts = new HashMap<>();
+    private final HashMap<Serializable, Queue<Cancellable>> electionTimeouts = new HashMap<>();
     /** HashMap to store Cancellable for timeout on the updateRequest message send to the coordinator */
     private final HashMap<UpdateClock, Cancellable> updateRequestTimeouts = new HashMap<>();
     // ________________________________
@@ -297,7 +299,7 @@ public class Replica extends AbstractReplica {
                 this.onCoordinatorCrash();
                 break;
             case TimeOut.TimeoutType.Election:
-                this.onElectionTimout();
+                this.onElectionTimeout();
                 break;
             default:
                 break;
@@ -394,9 +396,9 @@ public class Replica extends AbstractReplica {
         }
     }
     public static class ElectionAck implements Serializable {
-        public final int ackSenderId;
-        public ElectionAck(int ackSenderId) {
-            this.ackSenderId = ackSenderId;
+        public final ElectionMessage electionMessage;
+        public ElectionAck(ElectionMessage electionMessage) {
+            this.electionMessage = electionMessage;
         }
     }
     /**
@@ -430,7 +432,8 @@ public class Replica extends AbstractReplica {
         }
         this.electionInProgress = null;
         this.sendToNextReplica(msg);
-        // TODO: If the next replica doesn't respond, we should try the next one in the ring. This is not implemented yet.
+        this.electionTimeouts.computeIfAbsent(this.nextReplicaID, k -> new ArrayDeque<>())
+                .add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeoutType.Election)));
         
     }
     /**
@@ -439,7 +442,7 @@ public class Replica extends AbstractReplica {
      */
     private void sendAckToSender(ElectionMessage msg) {
         /** Acknowledgment message */
-        ElectionAck ack = new ElectionAck(this.id);
+        ElectionAck ack = new ElectionAck(msg);
         /** Sender ID */
         Integer senderId = msg.msgSenderId;
         if (senderId != null && this.replicas.containsKey(senderId)) {
@@ -500,12 +503,27 @@ public class Replica extends AbstractReplica {
         } 
         return this.nextReplicaID;
     }
-    private void onElectionTimout() {
-        debug("Election timeout, starting a new election");
-        this.startElection();
+    /**
+     * Handle an election timeout.
+     */
+    private void onElectionTimeout() {
+        debug("Election timeout. Removing the next replica from the list of replicas.");
+        // get and remove the first inserted ElectionMessage in the electionTimeouts map
+        this.nodeCrashed(this.nextReplicaID);
+        if (this.electionTimeouts != null && !this.electionTimeouts.isEmpty()) {
+            Serializable first = this.electionTimeouts.keySet().iterator().next();
+            this.electionTimeouts.remove(first);
+            this.sendToNextReplica(first);
+        }
     }
+    /**
+     * Handle an election acknowledgment message by canceling the corresponding timeout.
+     * @param msg the election acknowledgment message
+     */
     private void onElectionAck(ElectionAck msg) {
-        debug("Recived an ElectionAck from "+msg.ackSenderId);
+        debug("Recived an ElectionAck");
+        this.electionTimeouts.computeIfAbsent(msg.electionMessage, k -> new ArrayDeque<>())
+                .poll().cancel();
     }
     /**
      * Send a message to the next alive replica in a ring topology.
@@ -514,8 +532,9 @@ public class Replica extends AbstractReplica {
     private void sendToNextReplica(Serializable msg) {
         ActorRef nextReplica = this.replicas.get(this.getNextAliveReplicaID());
         nextReplica.tell(msg, this.getSelf());
-        // TODO: If the next replica doesn't respond, we should try the next one in the ring. This is not implemented yet.
-        this.setTimeout(COORDINATOR_BEAT_INTERVAL, null)
+        // Set a timeout for the next replica to respond to the election message
+        this.electionTimeouts.computeIfAbsent(msg, k -> new ArrayDeque<>())
+                .add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeoutType.Election)));
     }
     /**
      * Start an election.
