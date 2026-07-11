@@ -123,8 +123,8 @@ public class Replica extends AbstractReplica {
                 .match(Replica.UpdateACK.class,           this::onUpdateACK)
                 .match(Replica.WriteOK.class,             this::onWriteOK)
                 .match(TimeOut.class,                     this::onTimeOut)
-                .match(ElectionMessage.class,             this::onElectionMessage)
-                .match(CoordinatorElected.class,          this::onCoordinatorElected)
+                .match(Election.class,                    this::onElectionMessage)
+                .match(ElectionOver.class,                this::onElectionOver)
                 .match(ElectionAck.class,                 this::onElectionAck)
                 .match(CoordinatorHeartbeat.class,        this::onHeartbeat)
                 .build();
@@ -340,13 +340,11 @@ public class Replica extends AbstractReplica {
      * ElectionMessage
      * This class represents a message used in the election process to determine the coordinator among replicas.
      */
-    class ElectionMessage implements Serializable {
+    public static class ElectionMessage implements Serializable {
         /** The ID of the node that started the election */
         public final int electionStarter;
         /** A map of all candidates in the election, with their IDs as keys and clock values as values */
         public final Map<Integer, UpdateClock> candidates = new HashMap<Integer, UpdateClock>();
-        /** The ID of the node that send the message */
-        public int msgSenderId;
         /**
          * Constructor for ElectionMessage
          * @param electionStarter the ID of the node that started the election
@@ -354,7 +352,6 @@ public class Replica extends AbstractReplica {
          */
         public ElectionMessage(int electionStarter, UpdateClock nodeClock) {
             this.electionStarter = electionStarter;
-            this.msgSenderId = electionStarter;
             this.candidates.put(electionStarter, nodeClock);
         }
         /**
@@ -363,7 +360,6 @@ public class Replica extends AbstractReplica {
          */
         public void updateMsg(Replica replica) {
             this.candidates.put(replica.id, replica.updateClock);
-            this.msgSenderId = replica.id;
             this.deleteCrashedNodesFromCandidates(replica.replicas);
         }
         /**
@@ -432,9 +428,95 @@ public class Replica extends AbstractReplica {
             return replicas;
         }
     }
+    /**
+     * MessageWithACK
+     */
+    public static abstract class MessageWithACK implements Serializable {
+        /** The ID of the sender of the message */
+        public int senderId;
+        /** The message to be acknowledged */
+        public Serializable msg;
+
+        public MessageWithACK(int senderId, Serializable msg) {
+            this.senderId = senderId;
+            this.msg = msg;
+        }
+        /**
+         * Get the acknowledgment for the message
+         * @return the acknowledgment message
+         */
+        public abstract Serializable getACK();
+    }
+    /**
+     * Election Message with Acknowledgment
+     * This class represents an election message that requires an acknowledgment from the receiver.
+     */
+    public static class Election extends MessageWithACK {
+        /**
+         * Constructor for Election
+         * @param electionStarter the ID of the node that started the election
+         * @param nodeClock the clock value of the node that started the election
+         */
+        public Election(int electionStarter, UpdateClock nodeClock) {
+            super(electionStarter, new ElectionMessage(electionStarter, nodeClock));
+        }
+        @Override
+        public Serializable getACK() {
+            return this.getACKMsg();
+        }
+        /**
+         * Update the election message with the information of a replica
+         * @param replica the replica that updates the election message
+         */
+        public void updateMsg(Replica replica) {
+            // Update the message with the information of the replica
+            this.senderId = replica.id;
+            if (this.msg instanceof ElectionMessage) {
+                ElectionMessage electionMsg = (ElectionMessage) this.msg;
+                electionMsg.updateMsg(replica);
+            }
+        }
+        public ElectionMessage getMsg() {
+            if (this.msg instanceof ElectionMessage) {
+                return (ElectionMessage) this.msg;
+            }
+            return null;
+        }
+        public ElectionAck getACKMsg() {
+            return new ElectionAck(this.msg);
+        }
+    }
+    public static class ElectionOver extends MessageWithACK {
+        /**
+         * Constructor for ElectionOver
+         * @param senderId the ID of the sender of the message
+         * @param msg the message to be acknowledged
+         */
+        public ElectionOver(int senderId, CoordinatorElected msg) {
+            super(senderId, msg);
+        }
+        @Override
+        public Serializable getACK() {
+            return this.getACKMsg();
+        }
+        public CoordinatorElected getMsg() {
+            if (this.msg instanceof CoordinatorElected) {
+                return (CoordinatorElected) this.msg;
+            }
+            return null;
+        }
+        public ElectionAck getACKMsg() {
+            return new ElectionAck(this.msg);
+        }
+    }
     public static class ElectionAck implements Serializable {
-        public final ElectionMessage electionMessage;
-        public ElectionAck(ElectionMessage electionMessage) {
+        /** The election message that is being acknowledged */
+        public final Serializable electionMessage;
+        /**
+         * Constructor for ElectionAck
+         * @param electionMessage the election message that is being acknowledged
+         */
+        public ElectionAck(Serializable electionMessage) {
             this.electionMessage = electionMessage;
         }
     }
@@ -449,7 +531,6 @@ public class Replica extends AbstractReplica {
      * Handle the event when this replica becomes the coordinator.
      */
     private void onBecameCoordinator() {
-        this.callbackOnCoordinatorElected(this.coordinatorID);
         this.sendHeartbeat();
         // TODO: implement any additional logic needed when this replica becomes the coordinator
     }
@@ -458,28 +539,32 @@ public class Replica extends AbstractReplica {
      * forwarding the message to the next replica if necessary.
      * @param msg the coordinator elected message
      */
-    private void onCoordinatorElected(CoordinatorElected msg) {
-        this.coordinatorID = msg.newCoordinatorId;
-        if (msg.replicaId == this.id || !this.isElectionInProgress()) {
+    private void onElectionOver(ElectionOver msg) {
+        this.coordinatorID = msg.getMsg().newCoordinatorId;
+        if (msg.getMsg().replicaId == this.id || !this.isElectionInProgress()) {
             return;
         }
-        if (msg.newCoordinatorId == this.id) {
+        // Call the callback function to notify that a new coordinator has been elected
+        this.callbackOnCoordinatorElected(this.coordinatorID);
+        // Reset the election state and forward the message to the next replica
+        this.electionInProgress = null;
+        // Send the CoordinatorElected message to the next replica in the ring topology
+        this.sendToNextReplica(msg);
+        // If this replica is the new coordinator, perform any necessary actions
+        if (msg.getMsg().newCoordinatorId == this.id) {
             this.onBecameCoordinator();
         }
-        this.electionInProgress = null;
-        this.sendToNextReplica(msg);
-        this.electionTimeouts.computeIfAbsent(this.nextReplicaID, k -> new ArrayDeque<>())
-                .add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeoutType.Election)));
+        this.sendAckToSender(msg);
     }
     /**
      * Send an acknowledgment message to the sender of an election message.
      * @param msg the election message
      */
-    private void sendAckToSender(ElectionMessage msg) {
+    private void sendAckToSender(MessageWithACK msg) {
         /** Acknowledgment message */
-        ElectionAck ack = new ElectionAck(msg);
+        Serializable ack = msg.getACK();
         /** Sender ID */
-        Integer senderId = msg.msgSenderId;
+        Integer senderId = msg.senderId;
         if (senderId != null && this.replicas.containsKey(senderId)) {
             ActorRef senderReplica = this.replicas.get(senderId);
             senderReplica.tell(ack, this.getSelf());
@@ -490,19 +575,19 @@ public class Replica extends AbstractReplica {
      * forwarding the message to the next replica.
      * @param msg the election message
      */
-    private void onElectionMessage(ElectionMessage msg) {
-        if (msg.isElectionOver(electionInProgress)) {
+    private void onElectionMessage(Election msg) {
+        if (msg.getMsg().isElectionOver(electionInProgress)) {
             this.electionInProgress = null;
             /** Best candidate for coordinator */
-            Integer bestCandidate = msg.getBestCandidate();
+            Integer bestCandidate = msg.getMsg().getBestCandidate();
             if (bestCandidate != null) {
-                this.replicas = msg.deleteCrashedNodesFromList(this.replicas);
+                this.replicas = msg.getMsg().deleteCrashedNodesFromList(this.replicas);
                 /** Coordinator elected message */
-                CoordinatorElected coordinatorElected = new CoordinatorElected(bestCandidate, this.id);
+                ElectionOver coordinatorElected = new ElectionOver(this.id, new CoordinatorElected(bestCandidate, this.id));
                 this.sendToNextReplica(coordinatorElected);
             }
-        } else if (!this.isElectionInProgress() || msg.electionStarter < this.electionInProgress) {
-            this.electionInProgress = msg.electionStarter;
+        } else if (!this.isElectionInProgress() || msg.getMsg().electionStarter < this.electionInProgress) {
+            this.electionInProgress = msg.getMsg().electionStarter;
             msg.updateMsg(this);
             this.sendToNextReplica(msg);
         }
