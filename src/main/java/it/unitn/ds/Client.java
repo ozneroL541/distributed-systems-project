@@ -62,7 +62,7 @@ public class Client extends AbstractClient {
     @Override
     public void sendRead(ActorRef replica, int index) {
         log("Sending a Read request to:"+ replica.path().name());
-        replica.tell(new AbstractClient.ReadRequest(index), this.getSelf());
+        replica.tell(new AbstractClient.ReadRequest(index, replica), this.getSelf());
         this.sendReadRequestTimeouts
                 .computeIfAbsent(replica, k -> new ArrayDeque<>())
                 .add(setTimeout(this.getReadTimeoutDelay(),new TimeOut(TimeOut.TimeoutType.SendRead))); // TODO how much time to wait for coordinator?
@@ -73,7 +73,7 @@ public class Client extends AbstractClient {
     @Override
     public void sendWrite(ActorRef replica, int index, int value) {
         log("Sending a Write request to: " + replica.path().name() +" with content: {index:"+index+", value:"+value+"}");
-        replica.tell(new AbstractClient.WriteRequest(index,value, this.getSelf()),this.getSelf());
+        replica.tell(new AbstractClient.WriteRequest(index, value, replica),this.getSelf());
         this.sendWriteRequestTimeouts
                 .computeIfAbsent(replica, k -> new ArrayDeque<>())
                 .add(setTimeout(this.getWriteTimeoutDelay(),new TimeOut(TimeOut.TimeoutType.SendWrite))); // TODO how much time to wait for coordinator?

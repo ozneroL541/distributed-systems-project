@@ -275,7 +275,7 @@ public class Replica extends AbstractReplica {
     private void onReadRequest(AbstractClient.ReadRequest msg) {
         debug("Received a Read request from client");
         int position = this.positions[msg.index];
-        msg.replica.tell(new AbstractClient.ReadResult(true,msg.index, position, this.id), this.getSelf());
+        getSender().tell(new AbstractClient.ReadResult(true,msg.index, position, this.id), this.getSelf());
 
     }
 
