@@ -363,7 +363,7 @@ public class Replica extends AbstractReplica {
             /** Best candidate */
             Integer bestCandidate = null;
             /** List of all candidates with the same best clock */
-            List<Integer> candidatesList = null;
+            List<Integer> candidatesList =  null;
             /** Best clock in the election */
             UpdateClock bestClock = candidates.values().stream().max(UpdateClock::compareTo).orElse(null);
             // If there is no best clock, return null
@@ -401,6 +401,9 @@ public class Replica extends AbstractReplica {
          * @param replicas list of alive replicas according to the current node
          */
         public void deleteCrashedNodesFromCandidates(Map<Integer, ActorRef> replicas) {
+            if (replicas == null || replicas.isEmpty()) {
+                return;
+            }
             this.candidates.keySet().removeIf(id -> !replicas.containsKey(id));
         }
         /**
@@ -409,6 +412,9 @@ public class Replica extends AbstractReplica {
          * @return the updated list of candidates after removing crashed nodes
          */
         public Map<Integer, ActorRef> deleteCrashedNodesFromList(Map<Integer, ActorRef> replicas) {
+            if (replicas == null || replicas.isEmpty() || this.candidates == null || this.candidates.isEmpty()) {
+                return null;
+            }
             replicas.keySet().removeIf(id -> !this.candidates.containsKey(id));
             return replicas;
         }
@@ -495,7 +501,11 @@ public class Replica extends AbstractReplica {
      * @param id the id of the crashed node
      */
     private void nodeCrashed(int id){
-        this.replicas.remove(id);
+        try {
+            this.replicas.remove((Integer) id);
+        } catch (Exception e) {
+            debug("Error while removing crashed node: " + e.getMessage());
+        }
     }
     /**
      * Get the next replica ID in a ring topology.
