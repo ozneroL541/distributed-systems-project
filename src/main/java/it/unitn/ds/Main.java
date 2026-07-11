@@ -55,6 +55,13 @@ public class Main {
         // TODO: Implement your main logic
 
         clients.get(0).tell(new AbstractClient.WriteRequest(3,56,replicas.get(1)), Actor.noSender());
+        try {
+            // Wait for 10 seconds to let the system run
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        clients.get(1).tell(new AbstractClient.ReadRequest(3,replicas.get(2)), Actor.noSender());
 
         try {
             // Wait for 10 seconds to let the system run

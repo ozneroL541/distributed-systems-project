@@ -29,8 +29,11 @@ public class Replica extends AbstractReplica {
     // ________________________________
     /** HashMap to store the history of update commited by the replica */
     private final Map<UpdateClock, AbstractClient.WriteRequest> history = new HashMap<>();
+    /** HashMap to store the update ready to be commited by the replica but waiting for the WriteOK message*/
+    private final Map<UpdateClock, AbstractClient.WriteRequest> waitingForWriteOK = new HashMap<>();
     /** Queue for pending write requests */
-    private final Queue<AbstractClient.WriteRequest> pendingWrites = new ArrayDeque<>();
+    private final Queue<ClientWrite> pendingWrites = new ArrayDeque<>();
+    private record ClientWrite(ActorRef clientRef, AbstractClient.WriteRequest writeRequest){ }
     /** HashMap to store Cancellable for timeout on the writeRequest message send to the coordinator */
     private final HashMap<AbstractClient.WriteRequest, Queue<Cancellable>> writeRequestTimeouts = new HashMap<>();
     /** HashMap to store Cancellable for timeout on the updateRequest message send to the coordinator */
@@ -182,9 +185,9 @@ public class Replica extends AbstractReplica {
     // =================================================================================
 
     private void onWriteRequest(AbstractClient.WriteRequest msg) {
-        if (getSender() == msg.replica) {
+        if (getSender() != msg.replica) {
             debug("Inserting the request inside my pending write queue");
-            this.pendingWrites.add(msg);
+            this.pendingWrites.add(new ClientWrite(getSender(), msg));
         }
         log("Received a Write request by "+ getSender().path().name() + " with content: {index:"+msg.index+", value:"+msg.value+"}");
         if (this.coordinatorID == this.id) {
@@ -215,8 +218,7 @@ public class Replica extends AbstractReplica {
             }
         }
         // add update to history
-        history.put(msg.identifier, msg.writeRequest);
-        debug("My history is"+history.keySet()+history.values());
+        waitingForWriteOK.put(msg.identifier, msg.writeRequest);
         msg.coordinator.tell(new UpdateACK(msg.identifier), this.getSelf());
         this.updateRequestTimeouts
                 .putIfAbsent(msg.identifier, setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeOut.TimeoutType.UpdateRequest))); // TODO how much time to wait for coordinator?
@@ -253,8 +255,9 @@ public class Replica extends AbstractReplica {
 
         }
         UpdateClock identifier = msg.identifier;
-        AbstractClient.WriteRequest writeRequest = this.history.get(identifier);
+        AbstractClient.WriteRequest writeRequest = this.waitingForWriteOK.remove(identifier);
         this.positions[writeRequest.index] = writeRequest.value;
+        this.history.put(identifier,writeRequest);
         if (this.updateClock.compareTo(identifier) > 0 ) {
             return;
         }
@@ -263,13 +266,15 @@ public class Replica extends AbstractReplica {
         debug("New positions is: "+ Arrays.toString(this.positions));
         debug("pending write"+ pendingWrites.toString());
 
-        this.pendingWrites.stream()
-                .filter(p -> (p.index == writeRequest.index && p.value == writeRequest.value))
-                .findFirst()
-                .ifPresent(
-                        cpw -> cpw.replica.tell(
-                                new AbstractClient.WriteResult(true, writeRequest.index, writeRequest.value, this.id),
-                                this.getSelf()));
+        Optional<ClientWrite> pendingWrite = this.pendingWrites.stream()
+                .filter(p -> (p.writeRequest.index == writeRequest.index && p.writeRequest.value == writeRequest.value))
+                .findFirst();
+        if (pendingWrite.isPresent()) {
+            pendingWrite.get().clientRef.tell(
+                    new AbstractClient.WriteResult(true, writeRequest.index, writeRequest.value, this.id),
+                    this.getSelf());
+            this.pendingWrites.remove(pendingWrite.get());
+        }
     }
 
     private void onReadRequest(AbstractClient.ReadRequest msg) {
@@ -515,7 +520,7 @@ public class Replica extends AbstractReplica {
         ActorRef nextReplica = this.replicas.get(this.getNextAliveReplicaID());
         nextReplica.tell(msg, this.getSelf());
         // TODO: If the next replica doesn't respond, we should try the next one in the ring. This is not implemented yet.
-        this.setTimeout(COORDINATOR_BEAT_INTERVAL, null)
+        this.setTimeout(COORDINATOR_BEAT_INTERVAL, null);
     }
     /**
      * Start an election.
