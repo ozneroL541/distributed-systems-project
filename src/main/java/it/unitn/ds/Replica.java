@@ -424,6 +424,7 @@ public class Replica extends AbstractReplica {
      * Handle the event when this replica becomes the coordinator.
      */
     private void onBecameCoordinator() {
+        this.callbackOnCoordinatorElected(this.coordinatorID);
         this.sendHeartbeat();
         // TODO: implement any additional logic needed when this replica becomes the coordinator
     }
@@ -437,7 +438,6 @@ public class Replica extends AbstractReplica {
         if (msg.replicaId == this.id || this.electionInProgress == null) {
             return;
         }
-        this.callbackOnCoordinatorElected(this.coordinatorID);
         if (msg.newCoordinatorId == this.id) {
             this.onBecameCoordinator();
         }
