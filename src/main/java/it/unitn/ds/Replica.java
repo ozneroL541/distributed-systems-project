@@ -292,11 +292,7 @@ public class Replica extends AbstractReplica {
                 log("Timeout on write request");
                 break;
             case TimeOut.TimeoutType.UpdateRequest:
-                this.onCoordinatorCrash();
-                break;
             case TimeOut.TimeoutType.WriteRequest:
-                this.onCoordinatorCrash();
-                break;
             case TimeOut.TimeoutType.Heartbeat:
                 this.onCoordinatorCrash();
                 break;
