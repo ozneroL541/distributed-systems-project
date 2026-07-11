@@ -5,7 +5,6 @@ import akka.actor.Cancellable;
 import akka.actor.Props;
 import scala.concurrent.duration.Duration;
 
-import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 

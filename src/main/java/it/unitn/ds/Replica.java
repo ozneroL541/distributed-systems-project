@@ -574,12 +574,8 @@ public class Replica extends AbstractReplica {
      * @param msg the message to send
      */
     private void sendToNextReplica(Serializable msg) {
-        try {
-            ActorRef nextReplica = this.replicas.get(this.getNextAliveReplicaID());
-            nextReplica.tell(msg, this.getSelf());
-        } catch (Exception e) {
-            debug("Error while sending message to next replica: " + e.getMessage());
-        }
+        ActorRef nextReplica = this.replicas.get(this.getNextAliveReplicaID());
+        nextReplica.tell(msg, this.getSelf());
         // Set a timeout for the next replica to respond to the election message
         this.electionTimeouts.computeIfAbsent(msg, k -> new ArrayDeque<>())
                 .add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeoutType.Election)));
