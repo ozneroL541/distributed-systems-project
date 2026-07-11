@@ -1,10 +1,13 @@
 package it.unitn.ds;
 
 import akka.actor.ActorRef;
+import akka.actor.Cancellable;
 import akka.actor.Props;
+import scala.concurrent.duration.Duration;
 
 import java.io.Serializable;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 public class Replica extends AbstractReplica {
     /** List of positions in a replica */
@@ -21,7 +24,7 @@ public class Replica extends AbstractReplica {
      * ActorRef is the reference of the Replica inside AKKA 
      */
     private Map<Integer, ActorRef> replicas;
-    /** Replica specific filds */
+    /** Replica specific fields */
     private final Map<UpdateClock, AbstractClient.WriteRequest> history = new HashMap<>();
     /** Queue for pending write requests */
     private final Queue<AbstractClient.WriteRequest> pendingWrites = new ArrayDeque<>();
@@ -97,6 +100,23 @@ public class Replica extends AbstractReplica {
                 .matchAny(msg -> {})
                 .build();
     }
+    // =================================================================================
+    // Helper functions
+    // =================================================================================
+    /**
+     * Helper function to schedule a timeout
+     * @param time the time to wait before sending the timeout message (in milliseconds)
+     * @param timeOut the timeOut message to schedule
+     * @return A cancellable reference to the timeout that can be used to cancel the timeout if needed
+     */
+    Cancellable setTimeout(int time, TimeOut timeOut) {
+        return getContext().system().scheduler().scheduleOnce(
+                Duration.create(time, TimeUnit.MILLISECONDS),
+                getSelf(),
+                timeOut,
+                getContext().system().dispatcher(), getSelf()
+        );
+    }
     /**
      * Multicast a message to all the replicas
      * @param m the message to multicast
@@ -156,7 +176,7 @@ public class Replica extends AbstractReplica {
             debug("Inserting the request inside my pending write queue");
             this.pendingWrites.add(msg);
         }
-        log("Recived a Write request by "+ getSender().path().name() + " with content: {index:"+msg.index+", value:"+msg.value+"}");
+        log("Received a Write request by "+ getSender().path().name() + " with content: {index:"+msg.index+", value:"+msg.value+"}");
         if (this.coordinatorID == this.id) {
             log("I'm the coordinator; Sending the update message");
             this.updateClock.incrementI();
@@ -173,7 +193,7 @@ public class Replica extends AbstractReplica {
     }
 
     private void onUpdateRequest(Replica.UpdateRequest msg) {
-        log("Recived an Update request from coordinator with content: {index:"+msg.writeRequest.index+", value:"+msg.writeRequest.value+"}");
+        log("Received an Update request from coordinator with content: {index:"+msg.writeRequest.index+", value:"+msg.writeRequest.value+"}");
         // add update to history
         history.put(msg.identifier, msg.writeRequest);
         debug("My history is"+history.keySet()+history.values());
@@ -181,7 +201,7 @@ public class Replica extends AbstractReplica {
     }
 
     private void onUpdateACK(Replica.UpdateACK msg) {
-        debug("recived ack from "+ getSender().path().name());
+        debug("received ack from "+ getSender().path().name());
 //        int ACKnumber = UpdateACKCounter.getOrDefault(msg.identifier,0) + 1;
         Integer ACKnumber = UpdateACKCounter.get(msg.identifier);
         if (ACKnumber == null) {
@@ -203,7 +223,7 @@ public class Replica extends AbstractReplica {
     }
 
     private void onWriteOK(Replica.WriteOK msg) {
-        log("Recived a WriteOK message from the coordinator, applying the update");
+        log("Received a WriteOK message from the coordinator, applying the update");
         UpdateClock identifier = msg.identifier;
         AbstractClient.WriteRequest writeRequest = this.history.get(identifier);
         this.positions[writeRequest.index] = writeRequest.value;
@@ -213,7 +233,7 @@ public class Replica extends AbstractReplica {
         this.updateClock.syncClock(identifier);
         this.callbackOnUpdateApplied(writeRequest.index,writeRequest.value);
         debug("New positions is: "+ Arrays.toString(this.positions));
-        debug("pending wirte"+ pendingWrites.toString());
+        debug("pending write"+ pendingWrites.toString());
 
         this.pendingWrites.stream()
                 .filter(p -> (p.index == writeRequest.index && p.value == writeRequest.value))
@@ -225,7 +245,7 @@ public class Replica extends AbstractReplica {
     }
 
     private void onReadRequest(AbstractClient.ReadRequest msg) {
-        debug("Recived a Read request from client");
+        debug("Received a Read request from client");
         int position = this.positions[msg.index];
         msg.replica.tell(new AbstractClient.ReadResult(true,msg.index, position, this.id), this.getSelf());
 
