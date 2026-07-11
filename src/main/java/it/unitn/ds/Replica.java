@@ -360,7 +360,7 @@ public class Replica extends AbstractReplica {
             return replicas;
         }
     }
-    class ElectionAck implements Serializable {
+    public static class ElectionAck implements Serializable {
         public final int ackSenderId;
         public ElectionAck(int ackSenderId) {
             this.ackSenderId = ackSenderId;
