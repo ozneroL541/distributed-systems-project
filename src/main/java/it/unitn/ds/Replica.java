@@ -130,7 +130,7 @@ public class Replica extends AbstractReplica {
      * @param timeOut the timeOut message to schedule
      * @return A cancellable reference to the timeout that can be used to cancel the timeout if needed
      */
-    Cancellable setTimeout(int time, TimeOut timeOut) {
+    Cancellable setTimeout(long time, TimeOut timeOut) {
         return getContext().system().scheduler().scheduleOnce(
                 Duration.create(time, TimeUnit.MILLISECONDS),
                 getSelf(),
@@ -431,6 +431,7 @@ public class Replica extends AbstractReplica {
         this.electionInProgress = null;
         this.sendToNextReplica(msg);
         // TODO: If the next replica doesn't respond, we should try the next one in the ring. This is not implemented yet.
+        
     }
     /**
      * Send an acknowledgment message to the sender of an election message.
@@ -514,6 +515,7 @@ public class Replica extends AbstractReplica {
         ActorRef nextReplica = this.replicas.get(this.getNextAliveReplicaID());
         nextReplica.tell(msg, this.getSelf());
         // TODO: If the next replica doesn't respond, we should try the next one in the ring. This is not implemented yet.
+        this.setTimeout(COORDINATOR_BEAT_INTERVAL, null)
     }
     /**
      * Start an election.
