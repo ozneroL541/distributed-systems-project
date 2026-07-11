@@ -426,7 +426,7 @@ public class Replica extends AbstractReplica {
          */
         public Map<Integer, ActorRef> deleteCrashedNodesFromList(Map<Integer, ActorRef> replicas) {
             if (replicas == null || replicas.isEmpty() || this.candidates == null || this.candidates.isEmpty()) {
-                return null;
+                return replicas;
             }
             replicas.keySet().removeIf(id -> !this.candidates.containsKey(id));
             return replicas;
@@ -444,7 +444,6 @@ public class Replica extends AbstractReplica {
      */
     private void onCoordinatorCrash() {
         this.nodeCrashed(this.coordinatorID);
-        this.startElection();
     }
     /**
      * Handle the event when this replica becomes the coordinator.
@@ -516,6 +515,9 @@ public class Replica extends AbstractReplica {
     private void nodeCrashed(int id){
         try {
             this.replicas.remove((Integer) id);
+            if (this.coordinatorID == id) {
+                this.startElection();
+            }
         } catch (Exception e) {
             debug("Error while removing crashed node: " + e.getMessage());
         }
