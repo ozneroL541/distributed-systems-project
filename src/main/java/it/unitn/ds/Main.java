@@ -53,11 +53,10 @@ public class Main {
             entry.getValue().tell(initMsg, ActorRef.noSender());
         }
         // TODO: Implement your main logic
-
         clients.get(0).tell(new AbstractClient.WriteRequest(3,56,replicas.get(1)), Actor.noSender());
         try {
             // Wait for 10 seconds to let the system run
-            Thread.sleep(1000);
+            Thread.sleep(1);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -65,7 +64,7 @@ public class Main {
 
         try {
             // Wait for 10 seconds to let the system run
-            Thread.sleep(5000);
+            Thread.sleep(1);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -75,6 +74,13 @@ public class Main {
         System.out.println("\n========================================");
         System.out.println("END");
         System.out.println("========================================\n");
+        System.out.println("PELSE");
+//        System.out.println(new Client.HashMessage(new AbstractClient.ReadRequest(3)).hashCode());
+//        System.out.println(new Client.HashMessage(new AbstractClient.ReadRequest(3)).hashCode());
+//        HashMap<Client.HashMessage, Integer> hashMessageIntegerHashMap = new HashMap<>();
+//        hashMessageIntegerHashMap.put(new Client.HashMessage(new AbstractClient.ReadRequest(3)), 12);
+//        System.out.println(hashMessageIntegerHashMap.get(new Client.HashMessage(new AbstractClient.ReadRequest(3))));
+
     }
 
 

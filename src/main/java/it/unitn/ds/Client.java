@@ -5,6 +5,7 @@ import akka.actor.Cancellable;
 import akka.actor.Props;
 import scala.concurrent.duration.Duration;
 
+import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
@@ -14,11 +15,10 @@ public class Client extends AbstractClient {
      * Integer is the id of the replica,
      * ActorRef is the reference of the Replica inside AKKA
      */
-    private Map<Integer, ActorRef> replicas;
     /** HashMap to store Cancellable for timeout on the writeRequest message send to the coordinator */
-    private final HashMap<ActorRef, Queue<Cancellable>> sendWriteRequestTimeouts = new HashMap<>();
+    private final Queue<Cancellable> sendWriteRequestTimeouts = new ArrayDeque<>();
     /** HashMap to store Cancellable for timeout on the writeRequest message send to the coordinator */
-    private final HashMap<ActorRef, Queue<Cancellable>> sendReadRequestTimeouts = new HashMap<>();
+    private final Queue<Cancellable> sendReadRequestTimeouts = new ArrayDeque<>();
 
     Client(long readTimeoutDelay, long writeTimeoutDelay, Optional<ActorRef> defaultTargetReplica, Optional<ActorRef> listener) {
         super(readTimeoutDelay, writeTimeoutDelay, listener, defaultTargetReplica);
@@ -54,18 +54,11 @@ public class Client extends AbstractClient {
         );
     }
 
-    public void initSystem(AbstractReplica.InitSystem sysInit) {
-        this.replicas = sysInit.group;
-    }
-
-
     @Override
     public void sendRead(ActorRef replica, int index) {
         log("Sending a Read request to:"+ replica.path().name());
         replica.tell(new AbstractClient.ReadRequest(index, replica), this.getSelf());
-        this.sendReadRequestTimeouts
-                .computeIfAbsent(replica, k -> new ArrayDeque<>())
-                .add(setTimeout(this.getReadTimeoutDelay(),new TimeOut(TimeOut.TimeoutType.SendRead))); // TODO how much time to wait for coordinator?
+        this.sendReadRequestTimeouts.add(setTimeout(this.getReadTimeoutDelay(),new TimeOut(TimeOut.TimeoutType.SendRead))); // TODO how much time to wait for coordinator?
 
         // TODO: implement
     }
@@ -74,9 +67,7 @@ public class Client extends AbstractClient {
     public void sendWrite(ActorRef replica, int index, int value) {
         log("Sending a Write request to: " + replica.path().name() +" with content: {index:"+index+", value:"+value+"}");
         replica.tell(new AbstractClient.WriteRequest(index, value, replica),this.getSelf());
-        this.sendWriteRequestTimeouts
-                .computeIfAbsent(replica, k -> new ArrayDeque<>())
-                .add(setTimeout(this.getWriteTimeoutDelay(),new TimeOut(TimeOut.TimeoutType.SendWrite))); // TODO how much time to wait for coordinator?
+        this.sendWriteRequestTimeouts.add(setTimeout(this.getWriteTimeoutDelay(),new TimeOut(TimeOut.TimeoutType.SendWrite))); // TODO how much time to wait for coordinator?
         // TODO: implement
     }
 
@@ -87,31 +78,23 @@ public class Client extends AbstractClient {
                 .match(AbstractClient.ReadResult.class,  this::onReadResult)
                 .match(AbstractClient.WriteResult.class, this::onWriteResult)
                 .match(TimeOut.class,                    this::onTimeOut)
-                .match(AbstractReplica.InitSystem.class, this::initSystem)
                 // TODO add your message handlers here .match(, )
                 .build();
     }
 
     private void onReadResult(AbstractClient.ReadResult msg) {
-        ActorRef key = replicas.get(msg.fromReplica);
-        Queue<Cancellable> timeouts = this.sendReadRequestTimeouts.get(key);
-        if ( timeouts != null) {
-            timeouts.poll().cancel();
-            if (this.sendReadRequestTimeouts.get(key).isEmpty()) {
-                this.sendReadRequestTimeouts.remove(key);
-            }
+
+        Cancellable timeout = this.sendReadRequestTimeouts.poll();
+        if ( timeout != null) {
+            timeout.cancel();
         }
         callbackOnReadResult(msg);
     }
 
     private void onWriteResult(AbstractClient.WriteResult msg) {
-        ActorRef key = this.replicas.get(msg.fromReplica);
-        Queue<Cancellable> timeouts = this.sendWriteRequestTimeouts.get(key);
-        if ( timeouts != null) {
-            timeouts.poll().cancel();
-            if (this.sendWriteRequestTimeouts.get(key).isEmpty()) {
-                this.sendWriteRequestTimeouts.remove(key);
-            }
+        Cancellable timeout = this.sendWriteRequestTimeouts.poll();
+        if ( timeout != null) {
+            timeout.cancel();
         }
         callbackOnWriteResult(msg);
     }

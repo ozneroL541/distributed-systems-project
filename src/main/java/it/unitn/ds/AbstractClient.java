@@ -44,7 +44,7 @@ public abstract class AbstractClient extends AbstractActor {
             this(index, null);
         }
 
-        public ReadRequest(int index, ActorRef replica) {
+        public ReadRequest(int index, ActorRef replica){
             this.replica = replica;
             this.index = index;
         }
