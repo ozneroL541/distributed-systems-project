@@ -732,7 +732,7 @@ public class Replica extends AbstractReplica {
      */
     private void onElectionAck(ElectionAck msg) {
         debug("Received an ElectionAck for message "+ msg.electionMessage.toString());
-        this.electionTimeouts.get(getSender().path().name()).remove().cancel();
+        this.electionTimeouts.get(msg.electionMessage).remove().cancel();
     }
     /**
      * Send a message to the next alive replica in a ring topology.
