@@ -28,6 +28,10 @@ public class Replica extends AbstractReplica {
     // ________________________________
     // Replica specific variables
     // ________________________________
+    /** scheduled crash type */
+    private Crash.Type scheduled_crash_type;
+    /** scheduled crash countdown */
+    private int scheduled_crash_countdown;
     /** HashMap to store the history of update commited by the replica */
     private final Map<UpdateClock, AbstractClient.WriteRequest> history = new HashMap<>();
     /** HashMap to store the update ready to be commited by the replica but waiting for the WriteOK message*/
@@ -103,7 +107,24 @@ public class Replica extends AbstractReplica {
 
     @Override
     public void crash(AbstractReplica.Crash how_to_crash) {
-        getContext().become(crashed());
+        if (how_to_crash.type == Crash.Type.Now || how_to_crash.after_n_messages_of_type == 0 ) {
+            log("Replica crashed");
+            getContext().become(crashed());
+        } else {
+            this.scheduled_crash_type = how_to_crash.type;
+            this.scheduled_crash_countdown = how_to_crash.after_n_messages_of_type;
+        }
+
+    }
+
+    private void CheckIfTimeToCrash(Crash.Type type) {
+        if (this.scheduled_crash_type == type) {
+            if (this.scheduled_crash_countdown == 0) {
+                crash(new Crash(Crash.Type.Now, 0));
+            } else {
+                this.scheduled_crash_countdown-=1;
+            }
+        }
     }
 
     @Override
@@ -121,6 +142,7 @@ public class Replica extends AbstractReplica {
     @Override
     public final Receive createReceive() {
         return createBaseReceiveBuilder()
+                .match(Crash.class, this::crash)
                 .match(AbstractClient.ReadRequest.class,  this::onReadRequest)
                 .match(AbstractClient.WriteRequest.class, this::onWriteRequest)
                 .match(Replica.UpdateRequest.class,       this::onUpdateRequest)
