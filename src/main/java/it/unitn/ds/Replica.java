@@ -355,7 +355,7 @@ public class Replica extends AbstractReplica {
             case TimeOut.TimeoutType.UpdateRequest:
             case TimeOut.TimeoutType.WriteRequest:
                 debug("SIAMSO CRASHDHAHFHDSHFHDFHDHSAFHHDHFHHFHHFH");
-                this.onCoordinatorCrash();
+                this.coordinatorCrashed();
                 break;
             case TimeOut.TimeoutType.Heartbeat:
                 debug("TIMEOUT on HeartBeat");
@@ -585,11 +585,16 @@ public class Replica extends AbstractReplica {
         }
     }
     /**
-     * Handle a coordinator crash by removing it from the 
-     * list of replicas and starting an election.
+     * Handle the event when the coordinator has crashed by removing it from the list of replicas and starting a new election if necessary.
      */
-    private void onCoordinatorCrash() {
+    private void coordinatorCrashed() {
         this.nodeCrashed(this.coordinatorID);
+    }
+    private void onCoordinatorCrash() {
+        if (!this.isElectionInProgress()) {
+            this.startElection();
+        }
+        // TODO: Change receiver
     }
     /**
      * Handle the event when this replica becomes the coordinator.
@@ -674,7 +679,7 @@ public class Replica extends AbstractReplica {
         try {
             this.replicas.remove((Integer) id);
             if (this.coordinatorID == id) {
-                this.startElection();
+                this.onCoordinatorCrash();
             }
         } catch (Exception e) {
             debug("Error while removing crashed node: " + e.getMessage());
@@ -819,7 +824,7 @@ public class Replica extends AbstractReplica {
         if (this.isCoordinator()) {
             this.sendHeartbeat();
         } else {
-            this.onCoordinatorCrash();
+            this.coordinatorCrashed();
         }
     }
     /**
