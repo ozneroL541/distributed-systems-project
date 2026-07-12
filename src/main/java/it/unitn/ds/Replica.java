@@ -53,6 +53,8 @@ public class Replica extends AbstractReplica {
     // ________________________________
     /** Hashmap to count the number of ACK received for each message sent by the coordinator */
     private final Map<UpdateClock, Integer> UpdateACKCounter = new HashMap<>();
+    /** The update clock for the next message to be sent */
+    private final UpdateClock nextMessageClock;
     /** 
      * Current election status, 
      * null if no election is in progress 
@@ -79,6 +81,7 @@ public class Replica extends AbstractReplica {
     public Replica(int id, int minLatency, int maxLatency, int coordinatorBeatInterval, Optional<ActorRef> listener) {
         super(id, minLatency, maxLatency, coordinatorBeatInterval, listener);
         this.updateClock = new UpdateClock();
+        this.nextMessageClock = new UpdateClock();
     }
 
     public static Props props(int id, int minLatency, int maxLatency, int coordinatorBeatInterval) {
@@ -214,8 +217,10 @@ public class Replica extends AbstractReplica {
         log("Received a Write request by "+ getSender().path().name() + " with content: {index:"+msg.index+", value:"+msg.value+"}");
         if (this.isCoordinator()) {
             log("I'm the coordinator; Sending the update message");
-            this.updateClock.incrementI();
-            UpdateRequest updateRequest = new UpdateRequest(this.updateClock, this.getSelf(), msg);
+            UpdateClock clock = new UpdateClock(this.nextMessageClock.getE(), this.nextMessageClock.getI());
+            this.nextMessageClock.incrementI();
+            UpdateRequest updateRequest = new UpdateRequest(clock, this.getSelf(), msg);
+            debug("Sending message with "+ updateRequest.identifier.getE()+updateRequest.identifier.getI());
             this.UpdateACKCounter.put(updateRequest.identifier, 0);
             multicast(updateRequest);
 
@@ -225,7 +230,7 @@ public class Replica extends AbstractReplica {
             ActorRef coordinator = this.replicas.get(this.coordinatorID);
             coordinator.tell(msg, this.getSelf());
             this.writeRequestTimeouts.computeIfAbsent(msg, k -> new ArrayDeque<>())
-                    .add(setTimeout(this.getMaxLatencyPlusTolerance()+500000,new TimeOut(TimeOut.TimeoutType.WriteRequest)));
+                    .add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeOut.TimeoutType.WriteRequest)));
                     // TODO how much time to wait for coordinator?
         }
     }
@@ -242,17 +247,19 @@ public class Replica extends AbstractReplica {
         }
         // add update to history
         waitingForWriteOK.put(msg.identifier, msg.writeRequest);
+        debug("Sending updateACK :" + msg.identifier.getI() +"---"+ msg.writeRequest.index +" "+msg.writeRequest.index);
         msg.coordinator.tell(new UpdateACK(msg.identifier), this.getSelf());
         this.updateRequestTimeouts
-                .putIfAbsent(msg.identifier, setTimeout(this.getMaxLatencyPlusTolerance()+1000000,new TimeOut(TimeOut.TimeoutType.UpdateRequest)));
+                .putIfAbsent(msg.identifier, setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeOut.TimeoutType.UpdateRequest)));
                 // TODO how much time to wait for coordinator?
     }
 
     private void onUpdateACK(Replica.UpdateACK msg) {
-        debug("received ack from "+ getSender().path().name());
+        debug("received ack from "+ getSender().path().name()+"for clock: "+ msg.identifier.getE()+msg.identifier.getI());
 //        int ACKnumber = UpdateACKCounter.getOrDefault(msg.identifier,0) + 1;
         Integer ACKnumber = UpdateACKCounter.get(msg.identifier);
         if (ACKnumber == null) {
+            debug("NULL????? "+ msg.identifier.getI() +" -- " +ACKnumber);
             return;
         }
         ACKnumber += 1;
@@ -324,6 +331,7 @@ public class Replica extends AbstractReplica {
                 break;
             case TimeOut.TimeoutType.UpdateRequest:
             case TimeOut.TimeoutType.WriteRequest:
+                debug("SIAMSO CRASHDHAHFHDSHFHDFHDHSAFHHDHFHHFHHFH");
                 this.onCoordinatorCrash();
                 break;
             case TimeOut.TimeoutType.Heartbeat:
