@@ -442,7 +442,7 @@ public class Replica extends AbstractReplica {
          * @return the worst clock, or null if there are no candidates
          */
         public UpdateClock getWorstClock() {
-            final UpdateClock worstClock = candidates.values().stream().min(UpdateClock::compareTo).orElse(null).clone();
+            final UpdateClock worstClock = candidates.values().stream().min(UpdateClock::compareTo).orElse(new UpdateClock()).clone();
             return worstClock;
         }
         /**
