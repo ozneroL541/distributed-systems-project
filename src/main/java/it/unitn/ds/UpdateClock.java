@@ -1,5 +1,7 @@
 package it.unitn.ds;
 
+import java.util.Objects;
+
 /**
  * UpdateClock
  * Logical clock used to order updates in the system. It consists of an epoch number and a sequence number.
@@ -71,4 +73,15 @@ public class UpdateClock implements Comparable<UpdateClock> {
             this.i = other.i;
         }
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (!(o instanceof UpdateClock that)) return false;
+        return e == that.e && i == that.i;
+    }
+
+//    @Override
+//    public int hashCode() {
+//        return Objects.hash(e, i);
+//    }
 }

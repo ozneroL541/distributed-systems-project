@@ -43,7 +43,8 @@ public class Replica extends AbstractReplica {
     /** HashMap to store Cancellable for timeout on the writeRequest message send to the coordinator */
     private final HashMap<AbstractClient.WriteRequest, Queue<Cancellable>> writeRequestTimeouts = new HashMap<>();
     /** HashMap to store Cancellable for timeout on the election message send to the coordinator */
-    private final HashMap<Serializable, Queue<Cancellable>> electionTimeouts = new HashMap<>();
+//    private final HashMap<Serializable, Queue<Cancellable>> electionTimeouts = new HashMap<>();
+    private final HashMap<String, Queue<Cancellable>> StringelectionTimeouts = new HashMap<>();
     /** HashMap to store Cancellable for timeout on the updateRequest message send to the coordinator */
     private final HashMap<UpdateClock, Cancellable> updateRequestTimeouts = new HashMap<>();
     /** Cancellable for timeout on the coordinator heartbeat */
@@ -340,7 +341,7 @@ public class Replica extends AbstractReplica {
                 this.onHeartbeatTimeout();
                 break;
             case TimeOut.TimeoutType.Election:
-                this.onElectionTimeout();
+                this.onElectionTimeout(msg);
                 break;
             default:
                 break;
@@ -550,21 +551,32 @@ public class Replica extends AbstractReplica {
      * @param msg the coordinator elected message
      */
     private void onElectionOver(ElectionOver msg) {
+        debug("ELECTION IS OVER, I RECIVE " + msg.toString());
+        this.sendAckToSender(msg);
         this.coordinatorID = msg.getMsg().newCoordinatorId;
-        if (msg.getMsg().replicaId == this.id || !this.isElectionInProgress()) {
-            return;
-        }
+//        if (msg.getMsg().replicaId == this.id || !this.isElectionInProgress()) {
+//            return;
+//        }
         // Call the callback function to notify that a new coordinator has been elected
         this.callbackOnCoordinatorElected(this.coordinatorID);
-        // Reset the election state and forward the message to the next replica
-        this.electionInProgress = null;
-        // Send the CoordinatorElected message to the next replica in the ring topology
-        this.sendToNextReplica(msg);
         // If this replica is the new coordinator, perform any necessary actions
         if (msg.getMsg().newCoordinatorId == this.id) {
             this.onBecameCoordinator();
         }
-        this.sendAckToSender(msg);
+
+        // Send the CoordinatorElected message to the next replica in the ring topology
+        if (msg.getMsg().replicaId == this.id || !this.isElectionInProgress()) {
+            return;
+        }
+        // Reset the election state and forward the message to the next replica
+        this.electionInProgress = null;
+        ElectionOver x = new ElectionOver(this.id, new CoordinatorElected(this.coordinatorID,this.id));
+        this.sendToNextReplica(x);
+//        // If this replica is the new coordinator, perform any necessary actions
+//        if (msg.getMsg().newCoordinatorId == this.id) {
+//            this.onBecameCoordinator();
+//        }
+//        this.sendAckToSender(msg);
     }
     /**
      * Send an acknowledgment message to the sender of an election message.
@@ -575,8 +587,10 @@ public class Replica extends AbstractReplica {
         Serializable ack = msg.getACK();
         /** Sender ID */
         Integer senderId = msg.senderId;
+//        debug("ACT"+((Election) msg).senderId);
         if (senderId != null && this.replicas.containsKey(senderId)) {
             ActorRef senderReplica = this.replicas.get(senderId);
+            debug("Sending ack to: "+senderReplica.path().name() +" for message:" + msg +"|"+ msg.msg.toString()+"|");
             senderReplica.tell(ack, this.getSelf());
         }
     }
@@ -586,6 +600,8 @@ public class Replica extends AbstractReplica {
      * @param msg the election message
      */
     private void onElectionMessage(Election msg) {
+        debug("Recived electionMSG:" + msg.toString()+"|"+msg.msg.toString()+"|"+" from: "+getSender().path().name());
+        this.sendAckToSender(msg);
         if (msg.getMsg().isElectionOver(electionInProgress)) {
             this.electionInProgress = null;
             /** Best candidate for coordinator */
@@ -597,11 +613,12 @@ public class Replica extends AbstractReplica {
                 this.sendToNextReplica(coordinatorElected);
             }
         } else if (!this.isElectionInProgress() || msg.getMsg().electionStarter < this.electionInProgress) {
+            log("I'm not ignoring this message");
             this.electionInProgress = msg.getMsg().electionStarter;
             msg.updateMsg(this);
             this.sendToNextReplica(msg);
         }
-        this.sendAckToSender(msg);
+
     }
     /**
      * Handle a node crash by removing it from the list of replicas.
@@ -646,24 +663,27 @@ public class Replica extends AbstractReplica {
     /**
      * Handle an election timeout.
      */
-    private void onElectionTimeout() {
+    private void onElectionTimeout( TimeOut msg) {
         debug("Election timeout. Removing the next replica from the list of replicas.");
         // get and remove the first inserted ElectionMessage in the electionTimeouts map
         this.nodeCrashed(this.nextReplicaID);
-        if (this.electionTimeouts != null && !this.electionTimeouts.isEmpty()) {
-            Serializable first = this.electionTimeouts.keySet().iterator().next();
-            this.electionTimeouts.remove(first);
-            this.sendToNextReplica(first);
-        }
+//        if (this.electionTimeouts != null && !this.electionTimeouts.isEmpty()) {
+//            Serializable first = this.electionTimeouts.keySet().iterator().next();
+//            this.electionTimeouts.remove(first);
+//            this.sendToNextReplica(first);
+//        }
+        this.StringelectionTimeouts.get(msg.replica_name).remove().cancel();
+        this.sendToNextReplica(msg.msg);
     }
     /**
      * Handle an election acknowledgment message by canceling the corresponding timeout.
      * @param msg the election acknowledgment message
      */
     private void onElectionAck(ElectionAck msg) {
-        debug("Received an ElectionAck");
-        this.electionTimeouts.computeIfAbsent(msg.electionMessage, k -> new ArrayDeque<>())
-                .poll().cancel();
+        debug("Received an ElectionAck for message "+ msg.electionMessage.toString());
+//        this.electionTimeouts.computeIfAbsent(msg.electionMessage, k -> new ArrayDeque<>())
+//                .poll().cancel();
+        this.StringelectionTimeouts.get(getSender().path().name()).remove().cancel();
     }
     /**
      * Send a message to the next alive replica in a ring topology.
@@ -671,25 +691,41 @@ public class Replica extends AbstractReplica {
      */
     private void sendToNextReplica(Serializable msg) {
         ActorRef nextReplica = this.replicas.get(this.getNextAliveReplicaID());
-        nextReplica.tell(msg, this.getSelf());
+        debug("The message is an instance of class: " + msg.getClass() + " and is a " +msg.toString());
+
         // Set a timeout for the next replica to respond to the election message
-        this.electionTimeouts.computeIfAbsent(msg, k -> new ArrayDeque<>())
-                .add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeoutType.Election)));
+//        if (msg instanceof Election) {
+//            ((Election) msg).senderId = this.id;
+//            debug("CAH"+((Election) msg).senderId);
+//            nextReplica.tell(msg, this.getSelf());
+//            this.electionTimeouts.computeIfAbsent(((Election) msg).msg, k -> new ArrayDeque<>())
+//                    .add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeoutType.Election)));
+//            this
+//        } else {
+//            nextReplica.tell(msg, this.getSelf());
+//            this.electionTimeouts.computeIfAbsent(msg, k -> new ArrayDeque<>())
+//                    .add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeoutType.Election)));
+//        }
+        nextReplica.tell(msg, this.getSelf());
+        this.StringelectionTimeouts.putIfAbsent(nextReplica.path().name(), new ArrayDeque<>());
+        this.StringelectionTimeouts.get(nextReplica.path().name()).add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeoutType.Election)));
+
     }
     /**
      * Start an election.
      */
     private void startElection() {
         debug("ELECTION STARTED!!!!");
-        ElectionMessage electionMessage = new ElectionMessage(this.id, this.updateClock);
+//        ElectionMessage electionMessage = new ElectionMessage(this.id, this.updateClock);
+        Election election = new Election(this.id, this.updateClock);
         if (this.isElectionInProgress() && this.electionInProgress <= this.id) {
             // An election is already in progress
             return;
         }
         this.electionInProgress = this.id;
         this.callbackOnElectionStarted(this.coordinatorID);
-        this.sendToNextReplica(electionMessage);
-        debug("Starting an election with message: " + electionMessage.toString());
+        this.sendToNextReplica(election);
+        debug("Starting an election with message: " + election.toString());
     }
     /**
      * CoordinatorHeartbeat

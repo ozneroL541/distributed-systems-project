@@ -16,7 +16,7 @@ public class Main {
         System.out.println("START");
         System.out.println("========================================\n");
 
-        final int N_REPLICAS = 4;
+        final int N_REPLICAS = 7;
         final int COORDINATOR_ID = 0;
         final ActorSystem system = ActorSystem.create("TestMain");
 
@@ -48,23 +48,23 @@ public class Main {
                             Client.props(2000, 2000, defaultTargetReplica),
                             "Client_" + i));
         }
-        InitSystem clientInitMsg = new InitSystem(replicas, COORDINATOR_ID);
-        for (Map.Entry<Integer, ActorRef> entry : clients.entrySet()) {
-            entry.getValue().tell(initMsg, ActorRef.noSender());
-        }
+//        InitSystem clientInitMsg = new InitSystem(replicas, COORDINATOR_ID);
+//        for (Map.Entry<Integer, ActorRef> entry : clients.entrySet()) {
+//            entry.getValue().tell(initMsg, ActorRef.noSender());
+//        }
         // TODO: Implement your main logic
-        clients.get(0).tell(new AbstractClient.WriteRequest(3,56,replicas.get(1)), Actor.noSender());
-        try {
-            // Wait for 10 seconds to let the system run
-            Thread.sleep(1);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        clients.get(1).tell(new AbstractClient.ReadRequest(3,replicas.get(2)), Actor.noSender());
+//        clients.get(0).tell(new AbstractClient.WriteRequest(3,56,replicas.get(1)), Actor.noSender());
+//        try {
+//            // Wait for 10 seconds to let the system run
+//            Thread.sleep(1);
+//        } catch (InterruptedException e) {
+//            e.printStackTrace();
+//        }
+//        clients.get(1).tell(new AbstractClient.ReadRequest(3,replicas.get(2)), Actor.noSender());
 
         try {
             // Wait for 10 seconds to let the system run
-            Thread.sleep(1);
+            Thread.sleep(10000);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
