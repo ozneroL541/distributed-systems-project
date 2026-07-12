@@ -621,12 +621,16 @@ public class Replica extends AbstractReplica {
             this.onBecameCoordinator();
         }
         this.sendAckToSender(msg);
-        // Avoid infinite loops by checking if the message is from this replica or if there is no election in progress
-        if (msg.getMsg().replicaId == this.id || !this.isElectionInProgress()) {
+        // If an election is in progress, reset the election state and forward the message to the next replica
+        if (!this.isElectionInProgress()) {
             return;
         }
         // Reset the election state and forward the message to the next replica
         this.electionInProgress = null;
+        // Avoid infinite loops by checking if the message is from this replica
+        if (msg.getMsg().replicaId == this.id) {
+            return;
+        }
         ElectionOver x = new ElectionOver(this.id, new CoordinatorElected(this.coordinatorID,this.id));
         this.sendToNextReplica(x);
     }
@@ -665,6 +669,9 @@ public class Replica extends AbstractReplica {
             }
         } else if (!this.isElectionInProgress() || msg.getMsg().electionStarter < this.electionInProgress) {
             log("I'm not ignoring this message");
+            if (!this.isElectionInProgress()) {
+                this.callbackOnElectionStarted(this.coordinatorID);
+            }
             this.electionInProgress = msg.getMsg().electionStarter;
             msg.updateMsg(this);
             this.sendToNextReplica(msg);
