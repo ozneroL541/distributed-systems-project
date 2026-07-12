@@ -114,7 +114,6 @@ public class Replica extends AbstractReplica {
         this.coordinatorID = coordinator_id;
         log("I set as coordinator: "+coordinator_id);
         if (this.isCoordinator()) {
-            crash(new Crash(Crash.Type.Now, 0));
             this.sendHeartbeat();
         }
     }
@@ -551,8 +550,7 @@ public class Replica extends AbstractReplica {
      * @param msg the coordinator elected message
      */
     private void onElectionOver(ElectionOver msg) {
-        debug("ELECTION IS OVER, I RECIVE " + msg.toString());
-        this.sendAckToSender(msg);
+        debug("ELECTION IS OVER, I RECEIVE " + msg.toString());
         this.coordinatorID = msg.getMsg().newCoordinatorId;
 //        if (msg.getMsg().replicaId == this.id || !this.isElectionInProgress()) {
 //            return;
@@ -563,8 +561,8 @@ public class Replica extends AbstractReplica {
         if (msg.getMsg().newCoordinatorId == this.id) {
             this.onBecameCoordinator();
         }
-
-        // Send the CoordinatorElected message to the next replica in the ring topology
+        this.sendAckToSender(msg);
+        // Avoid infinite loops by checking if the message is from this replica or if there is no election in progress
         if (msg.getMsg().replicaId == this.id || !this.isElectionInProgress()) {
             return;
         }
@@ -572,11 +570,6 @@ public class Replica extends AbstractReplica {
         this.electionInProgress = null;
         ElectionOver x = new ElectionOver(this.id, new CoordinatorElected(this.coordinatorID,this.id));
         this.sendToNextReplica(x);
-//        // If this replica is the new coordinator, perform any necessary actions
-//        if (msg.getMsg().newCoordinatorId == this.id) {
-//            this.onBecameCoordinator();
-//        }
-//        this.sendAckToSender(msg);
     }
     /**
      * Send an acknowledgment message to the sender of an election message.
