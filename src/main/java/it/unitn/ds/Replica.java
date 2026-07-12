@@ -438,6 +438,14 @@ public class Replica extends AbstractReplica {
             return bestCandidate;
         }
         /**
+         * Get the worst clock among the candidates in the election message.
+         * @return the worst clock, or null if there are no candidates
+         */
+        public UpdateClock getWorstClock() {
+            final UpdateClock worstClock = candidates.values().stream().min(UpdateClock::compareTo).orElse(null).clone();
+            return worstClock;
+        }
+        /**
          * Check if the election is over based on the election starter.
          * @param electionInitiator the ID of the election initiator
          * @return true if the election is over, false otherwise
