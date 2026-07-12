@@ -132,7 +132,7 @@ public class Replica extends AbstractReplica {
         this.replicas = new HashMap<>(sysInit.group);
         this.numberOfReplicas = sysInit.group.size();
         int coordinator_id = sysInit.coordinator_id;
-        this.newCoordinator(coordinator_id);
+        this.coordinatorID = coordinator_id;
         log("I set as coordinator: "+coordinator_id);
         if (this.isCoordinator()) {
             this.sendHeartbeat();
@@ -355,7 +355,7 @@ public class Replica extends AbstractReplica {
             case TimeOut.TimeoutType.UpdateRequest:
             case TimeOut.TimeoutType.WriteRequest:
                 debug("SIAMSO CRASHDHAHFHDSHFHDFHDHSAFHHDHFHHFHHFH");
-                this.coordinatorCrashed();
+                this.onCoordinatorCrash();
                 break;
             case TimeOut.TimeoutType.Heartbeat:
                 debug("TIMEOUT on HeartBeat");
@@ -585,19 +585,11 @@ public class Replica extends AbstractReplica {
         }
     }
     /**
-     * Acnowledge the crash of the coordinator by removing it from the list of replicas and starting an election if necessary.
+     * Handle a coordinator crash by removing it from the 
+     * list of replicas and starting an election.
      */
-    private void coordinatorCrashed() {
+    private void onCoordinatorCrash() {
         this.nodeCrashed(this.coordinatorID);
-    }
-    /**
-     * Handle the event when the coordinator crashes.
-     */
-    private void onCoordnatorCrash() {
-        if (!this.isElectionInProgress()) {
-            this.startElection();
-        }
-        //TODO: Change receiver
     }
     /**
      * Handle the event when this replica becomes the coordinator.
@@ -607,33 +599,29 @@ public class Replica extends AbstractReplica {
         // TODO: implement any additional logic needed when this replica becomes the coordinator
     }
     /**
-     * Update the coordinator ID and perform any necessary actions when a new coordinator is elected.
-     * @param newCoordinatorId the ID of the new coordinator
-     */
-    private void newCoordinator(int newCoordinatorId) {
-        this.coordinatorID = newCoordinatorId;
-        this.callbackOnCoordinatorElected(newCoordinatorId);
-        // TODO: Change receiver
-    }
-    /**
      * Handle a coordinator elected message by updating the coordinator ID and
      * forwarding the message to the next replica if necessary.
      * @param msg the coordinator elected message
      */
     private void onElectionOver(ElectionOver msg) {
         debug("ELECTION IS OVER, I RECEIVE " + msg.toString());
-        this.newCoordinator(msg.getMsg().newCoordinatorId);
+        this.coordinatorID = msg.getMsg().newCoordinatorId;
+//        if (msg.getMsg().replicaId == this.id || !this.isElectionInProgress()) {
+//            return;
+//        }
+        // Call the callback function to notify that a new coordinator has been elected
+        this.callbackOnCoordinatorElected(this.coordinatorID);
         // If this replica is the new coordinator, perform any necessary actions
         if (msg.getMsg().newCoordinatorId == this.id) {
             this.onBecameCoordinator();
         }
         this.sendAckToSender(msg);
-        // Reset the election state and forward the message to the next replica
-        this.electionInProgress = null;
         // Avoid infinite loops by checking if the message is from this replica or if there is no election in progress
         if (msg.getMsg().replicaId == this.id || !this.isElectionInProgress()) {
             return;
         }
+        // Reset the election state and forward the message to the next replica
+        this.electionInProgress = null;
         ElectionOver x = new ElectionOver(this.id, new CoordinatorElected(this.coordinatorID,this.id));
         this.sendToNextReplica(x);
     }
@@ -660,6 +648,7 @@ public class Replica extends AbstractReplica {
      */
     private void onElectionMessage(Election msg) {
         debug("Recived electionMSG:" + msg.toString()+"|"+msg.msg.toString()+"|"+" from: "+getSender().path().name());
+        this.sendAckToSender(msg);
         if (msg.getMsg().isElectionOver(electionInProgress)) {
             this.electionInProgress = null;
             /** Best candidate for coordinator */
@@ -676,7 +665,7 @@ public class Replica extends AbstractReplica {
             msg.updateMsg(this);
             this.sendToNextReplica(msg);
         }
-        this.sendAckToSender(msg);
+
     }
     /**
      * Handle a node crash by removing it from the list of replicas.
@@ -686,7 +675,7 @@ public class Replica extends AbstractReplica {
         try {
             this.replicas.remove((Integer) id);
             if (this.coordinatorID == id) {
-                this.onCoordnatorCrash();
+                this.startElection();
             }
         } catch (Exception e) {
             debug("Error while removing crashed node: " + e.getMessage());
@@ -797,10 +786,10 @@ public class Replica extends AbstractReplica {
      */
     public static class CoordinatorHeartbeat implements Serializable {
         /** The ID of the coordinator sending the heartbeat */
-        public final int currentCoordinatorId;
+        public final int coordinatorId;
         /** The timestamp of the heartbeat */
         public CoordinatorHeartbeat(int coordinatorId) {
-            this.currentCoordinatorId = coordinatorId;
+            this.coordinatorId = coordinatorId;
         }
     }
     /**
@@ -831,7 +820,7 @@ public class Replica extends AbstractReplica {
         if (this.isCoordinator()) {
             this.sendHeartbeat();
         } else {
-            this.coordinatorCrashed();
+            this.onCoordinatorCrash();
         }
     }
     /**
