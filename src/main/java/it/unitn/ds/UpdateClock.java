@@ -73,20 +73,13 @@ public class UpdateClock implements Comparable<UpdateClock>, Serializable, Clone
             this.i = other.i;
         }
     }
-
     @Override
     public boolean equals(Object o) {
         if (!(o instanceof UpdateClock)) return false;
         return this.compareTo((UpdateClock) o) == 0;
     }
-
     @Override
     protected UpdateClock clone() {
         return new UpdateClock(this.e, this.i);
     }
-
-//    @Override
-//    public int hashCode() {
-//        return Objects.hash(e, i);
-//    }
 }

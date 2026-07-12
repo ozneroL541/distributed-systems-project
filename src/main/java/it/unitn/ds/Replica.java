@@ -489,6 +489,14 @@ public class Replica extends AbstractReplica {
             return bestCandidate;
         }
         /**
+         * Get the worst clock among the candidates in the election message.
+         * @return the worst clock, or null if there are no candidates
+         */
+        public UpdateClock getWorstClock() {
+            final UpdateClock worstClock = candidates.values().stream().min(UpdateClock::compareTo).orElse(new UpdateClock()).clone();
+            return worstClock;
+        }
+        /**
          * Check if the election is over based on the election starter.
          * @param electionInitiator the ID of the election initiator
          * @return true if the election is over, false otherwise
@@ -583,12 +591,20 @@ public class Replica extends AbstractReplica {
             }
             return this;
         }
+        /**
+         * Get the ElectionMessage from the Election message.
+         * @return the ElectionMessage, or null if the message is not of type ElectionMessage
+         */
         public ElectionMessage getMsg() {
             if (this.msg instanceof ElectionMessage) {
                 return (ElectionMessage) this.msg;
             }
             return null;
         }
+        /**
+         * Get the acknowledgment for the election message.
+         * @return the acknowledgment message
+         */
         public ElectionAck getACKMsg() {
             return new ElectionAck(this.msg);
         }
@@ -597,31 +613,61 @@ public class Replica extends AbstractReplica {
             return new Election(senderId, (ElectionMessage) this.msg);
         }
     }
+    /**
+     * ElectionChooseCoordinator
+     */
+    public static class ElectionChooseCoordinator implements Serializable {
+        /** The elected coordinator */
+        public final CoordinatorElected coordinatorElected;
+        /** The worst clock value among the replicas */
+        public final UpdateClock worstClock;
+        /**
+         * Constructor for ElectionChooseCoordinator
+         * @param coordinatorElected the elected coordinator
+         * @param worstClock the worst clock value among the replicas
+         */
+        public ElectionChooseCoordinator(CoordinatorElected coordinatorElected, UpdateClock worstClock) {
+            this.coordinatorElected = new CoordinatorElected(coordinatorElected.newCoordinatorId, coordinatorElected.replicaId);
+            this.worstClock = worstClock.clone();
+        }
+    }
+    /**
+     * ElectionOver
+     * This class represents a message indicating that the election process is over and a new coordinator has been elected.
+     */
     public static class ElectionOver extends MessageWithACK {
         /**
          * Constructor for ElectionOver
          * @param senderId the ID of the sender of the message
          * @param msg the message to be acknowledged
          */
-        public ElectionOver(int senderId, CoordinatorElected msg) {
+        public ElectionOver(int senderId, ElectionChooseCoordinator msg) {
             super(senderId, msg);
         }
         @Override
         public Serializable getACK() {
             return this.getACKMsg();
         }
-        public CoordinatorElected getMsg() {
-            if (this.msg instanceof CoordinatorElected) {
-                return (CoordinatorElected) this.msg;
+        /**
+         * Get the ElectionChooseCoordinator message from the ElectionOver message.
+         * @return the ElectionChooseCoordinator message, or null if the message is not of type ElectionChooseCoordinator
+         */
+        public ElectionChooseCoordinator getMsg() {
+            if (this.msg instanceof ElectionChooseCoordinator) {
+                return (ElectionChooseCoordinator) this.msg;
             }
             return null;
         }
+        /**
+         * Get the acknowledgment for the election over message.
+         * @return the acknowledgment message
+         */
         public ElectionAck getACKMsg() {
             return new ElectionAck(this.msg);
         }
         @Override
         public ElectionOver updateSender(int senderId) {
-            return new ElectionOver(senderId, (CoordinatorElected) this.msg);
+            return new ElectionOver(senderId, (ElectionChooseCoordinator) this.msg);
         }
     }
     public static class ElectionAck implements Serializable {
@@ -684,9 +730,9 @@ public class Replica extends AbstractReplica {
      */
     private void onElectionOver(ElectionOver msg) {
         debug("ELECTION IS OVER, I RECEIVE " + msg.toString());
-        this.newCoordinator(msg.getMsg().newCoordinatorId);
+        this.newCoordinator(msg.getMsg().coordinatorElected.newCoordinatorId);
         // If this replica is the new coordinator, perform any necessary actions
-        if (msg.getMsg().newCoordinatorId == this.id) {
+        if (msg.getMsg().coordinatorElected.newCoordinatorId == this.id) {
             this.onBecameCoordinator();
         }
         this.sendAckToSender(msg);
@@ -697,11 +743,10 @@ public class Replica extends AbstractReplica {
         // Reset the election state and forward the message to the next replica
         this.electionInProgress = null;
         // Avoid infinite loops by checking if the message is from this replica
-        if (msg.getMsg().replicaId == this.id) {
+        if (msg.getMsg().coordinatorElected.replicaId == this.id) {
             return;
         }
-        ElectionOver x = new ElectionOver(this.id, new CoordinatorElected(this.coordinatorID,this.id));
-        this.sendToNextReplica(x);
+        this.sendToNextReplica(msg);
     }
     /**
      * Send an acknowledgment message to the sender of an election message.
@@ -733,7 +778,13 @@ public class Replica extends AbstractReplica {
             if (bestCandidate != null) {
                 this.replicas = msg.getMsg().deleteCrashedNodesFromList(this.replicas);
                 /** Coordinator elected message */
-                ElectionOver coordinatorElected = new ElectionOver(this.id, new CoordinatorElected(bestCandidate, this.id));
+                ElectionOver coordinatorElected = new ElectionOver(
+                        this.id, 
+                        new ElectionChooseCoordinator(
+                                new CoordinatorElected(bestCandidate, this.id), 
+                                msg.getMsg().getWorstClock()
+                            )
+                    );
                 this.sendToNextReplica(coordinatorElected);
             }
         } else if (!this.isElectionInProgress() || msg.getMsg().electionStarter < this.electionInProgress) {
@@ -743,6 +794,7 @@ public class Replica extends AbstractReplica {
                 getContext().become(createElectionReceive());
             }
             this.electionInProgress = msg.getMsg().electionStarter;
+            this.coordinatorCrashed();
             msg.updateMsg(this);
             this.sendToNextReplica(msg);
         }
