@@ -107,12 +107,13 @@ public class Replica extends AbstractReplica {
 
     @Override
     public void initSystem(InitSystem sysInit) {
-        this.replicas = sysInit.group;
+        this.replicas = new HashMap<>(sysInit.group);
         this.numberOfReplicas = sysInit.group.size();
         int coordinator_id = sysInit.coordinator_id;
         this.coordinatorID = coordinator_id;
         log("I set as coordinator: "+coordinator_id);
         if (this.isCoordinator()) {
+            crash(new Crash(Crash.Type.Now, 0));
             this.sendHeartbeat();
         }
     }
@@ -335,6 +336,7 @@ public class Replica extends AbstractReplica {
                 this.onCoordinatorCrash();
                 break;
             case TimeOut.TimeoutType.Heartbeat:
+                debug("TIMEOUT on HeartBeat");
                 this.onHeartbeatTimeout();
                 break;
             case TimeOut.TimeoutType.Election:
@@ -677,6 +679,7 @@ public class Replica extends AbstractReplica {
      * Start an election.
      */
     private void startElection() {
+        debug("ELECTION STARTED!!!!");
         ElectionMessage electionMessage = new ElectionMessage(this.id, this.updateClock);
         if (this.isElectionInProgress() && this.electionInProgress <= this.id) {
             // An election is already in progress
