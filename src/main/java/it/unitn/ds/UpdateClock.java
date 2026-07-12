@@ -1,6 +1,6 @@
 package it.unitn.ds;
 
-import java.util.Objects;
+import java.io.Serializable;
 
 /**
  * UpdateClock
@@ -8,7 +8,7 @@ import java.util.Objects;
  * The epoch number is incremented when a new coordinator is elected, and the sequence number is incremented for each update made by the coordinator.
  * The clock can be synchronized with another clock to ensure that updates are applied in the correct order across replicas.
  */
-public class UpdateClock implements Comparable<UpdateClock> {
+public class UpdateClock implements Comparable<UpdateClock>, Serializable, Cloneable {
     /** Epoch number */
     private int e;
     /** Sequence number */
@@ -77,7 +77,7 @@ public class UpdateClock implements Comparable<UpdateClock> {
     @Override
     public boolean equals(Object o) {
         if (!(o instanceof UpdateClock that)) return false;
-        return e == that.e && i == that.i;
+        return this.compareTo((UpdateClock) o) == 0;
     }
 
 //    @Override
