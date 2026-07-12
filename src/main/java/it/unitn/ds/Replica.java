@@ -635,11 +635,12 @@ public class Replica extends AbstractReplica {
             return this.nextReplicaID;
         }
         if (this.nextReplicaID == null) {
-            this.nextReplicaID = this.correctNextReplicaID(this.id + 1);
+            this.nextReplicaID = this.correctNextReplicaID(this.id);
         }
         while (!this.replicas.containsKey(this.nextReplicaID)) {
-            this.nextReplicaID = this.correctNextReplicaID(this.nextReplicaID + 1);
-        } 
+            this.nextReplicaID = this.correctNextReplicaID(this.nextReplicaID);
+        }
+        debug("My next replica is: "+ this.nextReplicaID);
         return this.nextReplicaID;
     }
     /**
