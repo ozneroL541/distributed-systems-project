@@ -668,6 +668,29 @@ public class Replica extends AbstractReplica {
         // TODO: implement any additional logic needed when this replica becomes the coordinator
     }
     /**
+     * Get the shortened history of updates that are more recent than the given clock.
+     * @param clock the clock to start from to get the shortened history
+     * @return the history of updates that are more recent than the given clock
+     */
+    private Map<UpdateClock, AbstractClient.WriteRequest> getShortnedHistory(UpdateClock clock) {
+        final Map<UpdateClock, AbstractClient.WriteRequest> shortnedHistory = new HashMap<>();
+        for (Map.Entry<UpdateClock, AbstractClient.WriteRequest> entry : this.history.entrySet()) {
+            if (entry.getKey().compareTo(clock) > 0) {
+                shortnedHistory.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return shortnedHistory;
+    }
+    /**
+     * Handle the event when this replica is elected as the new coordinator by sending a heartbeat and performing any necessary actions.
+     * @param worstClock the worst clock value among the replicas
+     */
+    private void onElectedCoordinator(UpdateClock worstClock) {
+        this.onBecameCoordinator();
+        // TODO: implement any additional logic needed when this replica becomes the coordinator
+        final Map<UpdateClock, AbstractClient.WriteRequest> shortnedHistory = this.getShortnedHistory(worstClock);
+    }
+    /**
      * Handle a coordinator elected message by updating the coordinator ID and
      * forwarding the message to the next replica if necessary.
      * @param msg the coordinator elected message
@@ -677,7 +700,7 @@ public class Replica extends AbstractReplica {
         this.newCoordinator(msg.getMsg().coordinatorElected.newCoordinatorId);
         // If this replica is the new coordinator, perform any necessary actions
         if (msg.getMsg().coordinatorElected.newCoordinatorId == this.id) {
-            this.onBecameCoordinator();
+            this.onElectedCoordinator(msg.getMsg().worstClock);
         }
         this.sendAckToSender(msg);
         // If an election is in progress, reset the election state and forward the message to the next replica
