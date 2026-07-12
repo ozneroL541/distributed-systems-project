@@ -686,6 +686,7 @@ public class Replica extends AbstractReplica {
                 this.callbackOnElectionStarted(this.coordinatorID);
             }
             this.electionInProgress = msg.getMsg().electionStarter;
+            this.coordinatorCrashed();
             msg.updateMsg(this);
             this.sendToNextReplica(msg);
         }
