@@ -383,15 +383,17 @@ public class Replica extends AbstractReplica {
          * @param nodeClock the clock value of the node that started the election
          */
         public ElectionMessage(int electionStarter, UpdateClock nodeClock) {
+            final UpdateClock clock = nodeClock.clone();
             this.electionStarter = electionStarter;
-            this.candidates.put(electionStarter, nodeClock);
+            this.candidates.put(electionStarter, clock);
         }
         /**
          * Update the message with the information of a replica
          * @param replica the replica that updates the message
          */
         public ElectionMessage updateMsg(Replica replica) {
-            this.candidates.put(replica.id, replica.updateClock);
+            final UpdateClock clock = replica.updateClock.clone();
+            this.candidates.put(replica.id, clock);
             this.deleteCrashedNodesFromCandidates(replica.replicas);
             return (ElectionMessage) this.clone();
         }
