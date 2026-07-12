@@ -590,6 +590,7 @@ public class Replica extends AbstractReplica {
      */
     private void onCoordinatorCrash() {
         this.nodeCrashed(this.coordinatorID);
+        // TODO change behavior to start an election only if this replica is not the coordinator
     }
     /**
      * Handle the event when this replica becomes the coordinator.
@@ -616,12 +617,12 @@ public class Replica extends AbstractReplica {
             this.onBecameCoordinator();
         }
         this.sendAckToSender(msg);
+        // Reset the election state and forward the message to the next replica
+        this.electionInProgress = null;
         // Avoid infinite loops by checking if the message is from this replica or if there is no election in progress
         if (msg.getMsg().replicaId == this.id || !this.isElectionInProgress()) {
             return;
         }
-        // Reset the election state and forward the message to the next replica
-        this.electionInProgress = null;
         ElectionOver x = new ElectionOver(this.id, new CoordinatorElected(this.coordinatorID,this.id));
         this.sendToNextReplica(x);
     }
@@ -648,7 +649,6 @@ public class Replica extends AbstractReplica {
      */
     private void onElectionMessage(Election msg) {
         debug("Recived electionMSG:" + msg.toString()+"|"+msg.msg.toString()+"|"+" from: "+getSender().path().name());
-        this.sendAckToSender(msg);
         if (msg.getMsg().isElectionOver(electionInProgress)) {
             this.electionInProgress = null;
             /** Best candidate for coordinator */
@@ -665,7 +665,7 @@ public class Replica extends AbstractReplica {
             msg.updateMsg(this);
             this.sendToNextReplica(msg);
         }
-
+        this.sendAckToSender(msg);
     }
     /**
      * Handle a node crash by removing it from the list of replicas.
@@ -674,7 +674,7 @@ public class Replica extends AbstractReplica {
     private void nodeCrashed(int id){
         try {
             this.replicas.remove((Integer) id);
-            if (this.coordinatorID == id) {
+            if (this.coordinatorID == id && !this.isElectionInProgress()) {
                 this.startElection();
             }
         } catch (Exception e) {
