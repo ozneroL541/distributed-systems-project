@@ -540,12 +540,20 @@ public class Replica extends AbstractReplica {
             }
             return this;
         }
+        /**
+         * Get the ElectionMessage from the Election message.
+         * @return the ElectionMessage, or null if the message is not of type ElectionMessage
+         */
         public ElectionMessage getMsg() {
             if (this.msg instanceof ElectionMessage) {
                 return (ElectionMessage) this.msg;
             }
             return null;
         }
+        /**
+         * Get the acknowledgment for the election message.
+         * @return the acknowledgment message
+         */
         public ElectionAck getACKMsg() {
             return new ElectionAck(this.msg);
         }
@@ -554,6 +562,10 @@ public class Replica extends AbstractReplica {
             return new Election(senderId, (ElectionMessage) this.msg);
         }
     }
+    /**
+     * ElectionOver
+     * This class represents a message indicating that the election process is over and a new coordinator has been elected.
+     */
     public static class ElectionOver extends MessageWithACK {
         /**
          * Constructor for ElectionOver
@@ -567,12 +579,20 @@ public class Replica extends AbstractReplica {
         public Serializable getACK() {
             return this.getACKMsg();
         }
+        /**
+         * Get the CoordinatorElected message from the ElectionOver message.
+         * @return the CoordinatorElected message, or null if the message is not of type CoordinatorElected
+         */
         public CoordinatorElected getMsg() {
             if (this.msg instanceof CoordinatorElected) {
                 return (CoordinatorElected) this.msg;
             }
             return null;
         }
+        /**
+         * Get the acknowledgment for the election over message.
+         * @return the acknowledgment message
+         */
         public ElectionAck getACKMsg() {
             return new ElectionAck(this.msg);
         }
