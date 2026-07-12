@@ -19,10 +19,10 @@ public class Replica extends AbstractReplica {
     private int coordinatorID = 0;
     /** The number of replicas in the system */
     private int numberOfReplicas;
-    /** 
-     * List of all alive replicas of the system. 
-     * Integer is the id of the replica, 
-     * ActorRef is the reference of the Replica inside AKKA 
+    /**
+     * List of all alive replicas of the system.
+     * Integer is the id of the replica,
+     * ActorRef is the reference of the Replica inside AKKA
      */
     private Map<Integer, ActorRef> replicas;
     // ________________________________
@@ -117,14 +117,16 @@ public class Replica extends AbstractReplica {
 
     }
 
-    private void CheckIfTimeToCrash(Crash.Type type) {
+    private boolean checkIfTimeToCrash(Crash.Type type) {
         if (this.scheduled_crash_type == type) {
             if (this.scheduled_crash_countdown == 0) {
                 crash(new Crash(Crash.Type.Now, 0));
+                return true;
             } else {
                 this.scheduled_crash_countdown-=1;
             }
         }
+        return false;
     }
 
     @Override
@@ -156,6 +158,20 @@ public class Replica extends AbstractReplica {
                 .build();
     }
 
+
+    public final Receive createElectionReceive() {
+        return createBaseReceiveBuilder()
+                .match(AbstractClient.ReadRequest.class,  this::onReadRequest)
+                .match(AbstractClient.WriteRequest.class, w -> this.pendingWrites.add(new ClientWrite(getSender(), w)))
+                .match(TimeOut.class,                     this::onTimeOut)
+                .match(Election.class,                    this::onElectionMessage)
+                .match(ElectionOver.class,                this::onElectionOver)
+                .match(ElectionAck.class,                 this::onElectionAck)
+                .match(Synchronization.class,             this::onSyncMessage)
+                .match(CoordinatorHeartbeat.class,        this::onHeartbeat)
+                .build();
+    }
+
     public Receive crashed() {
         return receiveBuilder()
                 .matchAny(msg -> {})
@@ -182,9 +198,30 @@ public class Replica extends AbstractReplica {
      * Multicast a message to all the replicas
      * @param m the message to multicast
      */
-    void multicast(Serializable m) {
+    void multicast(Serializable m, Crash.Type crash_type) {
         for (ActorRef r : replicas.values()) {
             r.tell(m, this.getSelf());
+            switch (crash_type) {
+                case Heartbeat -> {
+                    // CRASH Heartbeat
+                    if(this.checkIfTimeToCrash(Crash.Type.Heartbeat)) {
+                        return;
+                    }
+                }
+                case Update -> {
+                    // CRASH UPDATE
+                    if(this.checkIfTimeToCrash(Crash.Type.Update)) {
+                        return;
+                    }
+                }
+                case WriteOK -> {
+                    // CRASH WRITE_OK
+                    if(this.checkIfTimeToCrash(Crash.Type.WriteOK)) {
+                        return;
+                    }
+                }
+            }
+
         }
     }
 
@@ -228,6 +265,14 @@ public class Replica extends AbstractReplica {
         }
     }
 
+    public static class Synchronization implements Serializable {
+        Map<UpdateClock, AbstractClient.WriteRequest> missingUpdate;
+
+        public Synchronization(Map<UpdateClock, AbstractClient.WriteRequest> missingUpdate) {
+            this.missingUpdate = missingUpdate;
+        }
+    }
+
     // =================================================================================
     // Messages handler functions
     // =================================================================================
@@ -240,12 +285,13 @@ public class Replica extends AbstractReplica {
         log("Received a Write request by "+ getSender().path().name() + " with content: {index:"+msg.index+", value:"+msg.value+"}");
         if (this.isCoordinator()) {
             log("I'm the coordinator; Sending the update message");
-            UpdateClock clock = new UpdateClock(this.nextMessageClock.getE(), this.nextMessageClock.getI());
             this.nextMessageClock.incrementI();
+            UpdateClock clock = new UpdateClock(this.nextMessageClock.getE(), this.nextMessageClock.getI());
+//            this.nextMessageClock.incrementI();
             UpdateRequest updateRequest = new UpdateRequest(clock, this.getSelf(), msg);
             debug("Sending message with "+ updateRequest.identifier.getE()+updateRequest.identifier.getI());
             this.UpdateACKCounter.put(updateRequest.identifier, 0);
-            multicast(updateRequest);
+            multicast(updateRequest, Crash.Type.Update);
 
         }
         else {
@@ -275,6 +321,8 @@ public class Replica extends AbstractReplica {
         this.updateRequestTimeouts
                 .putIfAbsent(msg.identifier, setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeOut.TimeoutType.UpdateRequest)));
                 // TODO how much time to wait for coordinator?
+        // CRASH UPDATE
+        this.checkIfTimeToCrash(Crash.Type.Update);
     }
 
     private void onUpdateACK(Replica.UpdateACK msg) {
@@ -289,7 +337,7 @@ public class Replica extends AbstractReplica {
         int quorum = replicas.size()/2 +1;
         if (ACKnumber >= quorum) {
             WriteOK writeOK = new WriteOK(msg.identifier);
-            multicast(writeOK);
+            multicast(writeOK, Crash.Type.WriteOK);
             this.UpdateACKCounter.remove(msg.identifier);
         } else {
             UpdateACKCounter.put(
@@ -309,12 +357,15 @@ public class Replica extends AbstractReplica {
 
         }
         UpdateClock identifier = msg.identifier;
-        AbstractClient.WriteRequest writeRequest = this.waitingForWriteOK.remove(identifier);
-        this.positions[writeRequest.index] = writeRequest.value;
-        this.history.put(identifier,writeRequest);
+//        AbstractClient.WriteRequest writeRequest = this.waitingForWriteOK.remove(identifier);
+//        this.positions[writeRequest.index] = writeRequest.value;
+//        this.history.put(identifier,writeRequest);
         if (this.updateClock.compareTo(identifier) > 0 ) {
             return;
         }
+        AbstractClient.WriteRequest writeRequest = this.waitingForWriteOK.remove(identifier);
+        this.positions[writeRequest.index] = writeRequest.value;
+        this.history.put(identifier,writeRequest);
         this.updateClock.syncClock(identifier);
         this.callbackOnUpdateApplied(writeRequest.index,writeRequest.value);
         debug("New positions is: "+ Arrays.toString(this.positions));
@@ -410,7 +461,7 @@ public class Replica extends AbstractReplica {
         }
         /**
          * Get the best candidate for the election based on the highest clock and ID.
-         * The best candidate is the one with the highest clock value, 
+         * The best candidate is the one with the highest clock value,
          * and in case of a tie, the one with the highest ID.
          * @return the ID of the best candidate, or null if there are no candidates
          */
@@ -594,6 +645,7 @@ public class Replica extends AbstractReplica {
      * Handle the event when the coordinator has crashed by starting a new election if one is not already in progress.
      */
     private void onCoordinatorCrash() {
+        getContext().become(createElectionReceive());
         if (!this.isElectionInProgress()) {
             this.startElection();
         }
@@ -619,7 +671,11 @@ public class Replica extends AbstractReplica {
      */
     private void onBecameCoordinator() {
         this.sendHeartbeat();
-        // TODO: implement any additional logic needed when this replica becomes the coordinator
+        // preare the Sync message
+        Synchronization syncMessage = new Synchronization(this.history);
+        this.updateClock.incrementE();
+        this.nextMessageClock.syncClock(this.updateClock);
+        multicast(syncMessage, Crash.Type.Now); // TODO: SHOULD CRASH?
     }
     /**
      * Handle a coordinator elected message by updating the coordinator ID and
@@ -664,7 +720,7 @@ public class Replica extends AbstractReplica {
         }
     }
     /**
-     * Handle an election message by updating the election state and 
+     * Handle an election message by updating the election state and
      * forwarding the message to the next replica.
      * @param msg the election message
      */
@@ -684,6 +740,7 @@ public class Replica extends AbstractReplica {
             log("I'm not ignoring this message");
             if (!this.isElectionInProgress()) {
                 this.callbackOnElectionStarted(this.coordinatorID);
+                getContext().become(createElectionReceive());
             }
             this.electionInProgress = msg.getMsg().electionStarter;
             msg.updateMsg(this);
@@ -786,7 +843,8 @@ public class Replica extends AbstractReplica {
         //this.StringelectionTimeouts.get(nextReplica.path().name()).add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeoutType.Election)));
         //this.electionTimeouts.putIfAbsent(nextReplica.path().name(), new ArrayDeque<>());
         //this.electionTimeouts.get(nextReplica.path().name()).add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeoutType.Election)));
-
+        // CRASH ELECTION
+        this.checkIfTimeToCrash(Crash.Type.Election);
     }
     /**
      * Start an election.
@@ -851,7 +909,7 @@ public class Replica extends AbstractReplica {
      * Send a heartbeat message to all replicas.
      */
     private void sendHeartbeat() {
-        this.multicast(new CoordinatorHeartbeat(this.id));
+        this.multicast(new CoordinatorHeartbeat(this.id), Crash.Type.Now); // TODO: SHOULD CRASH?
     }
     /**
      * Check if this replica is the coordinator.
@@ -866,5 +924,19 @@ public class Replica extends AbstractReplica {
      */
     public boolean isElectionInProgress() {
         return this.electionInProgress != null;
+    }
+
+
+    private void onSyncMessage(Synchronization msg) {
+        for (UpdateClock updateClock : msg.missingUpdate.keySet()) {
+            if (this.updateClock.compareTo(updateClock) > 0 ) {
+                continue;
+            }
+            AbstractClient.WriteRequest writeRequest = msg.missingUpdate.get(updateClock);
+            this.positions[writeRequest.index] = writeRequest.value;
+            this.history.put(updateClock.clone(),new AbstractClient.WriteRequest(writeRequest.index,writeRequest.value,writeRequest.replica));
+            this.updateClock.syncClock(updateClock);
+        }
+        getContext().become(createReceive());
     }
 }
