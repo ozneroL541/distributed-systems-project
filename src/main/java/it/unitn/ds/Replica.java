@@ -648,7 +648,6 @@ public class Replica extends AbstractReplica {
      */
     private void onElectionMessage(Election msg) {
         debug("Recived electionMSG:" + msg.toString()+"|"+msg.msg.toString()+"|"+" from: "+getSender().path().name());
-        this.sendAckToSender(msg);
         if (msg.getMsg().isElectionOver(electionInProgress)) {
             this.electionInProgress = null;
             /** Best candidate for coordinator */
@@ -665,7 +664,7 @@ public class Replica extends AbstractReplica {
             msg.updateMsg(this);
             this.sendToNextReplica(msg);
         }
-
+        this.sendAckToSender(msg);
     }
     /**
      * Handle a node crash by removing it from the list of replicas.
