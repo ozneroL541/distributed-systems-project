@@ -132,7 +132,7 @@ public class Replica extends AbstractReplica {
         this.replicas = new HashMap<>(sysInit.group);
         this.numberOfReplicas = sysInit.group.size();
         int coordinator_id = sysInit.coordinator_id;
-        this.coordinatorID = coordinator_id;
+        this.newCoordinator(coordinator_id);
         log("I set as coordinator: "+coordinator_id);
         if (this.isCoordinator()) {
             this.sendHeartbeat();
@@ -606,6 +606,10 @@ public class Replica extends AbstractReplica {
         this.sendHeartbeat();
         // TODO: implement any additional logic needed when this replica becomes the coordinator
     }
+    private void newCoordinator(int newCoordinatorId) {
+        this.coordinatorID = newCoordinatorId;
+        this.callbackOnCoordinatorElected(newCoordinatorId);
+    }
     /**
      * Handle a coordinator elected message by updating the coordinator ID and
      * forwarding the message to the next replica if necessary.
@@ -613,12 +617,7 @@ public class Replica extends AbstractReplica {
      */
     private void onElectionOver(ElectionOver msg) {
         debug("ELECTION IS OVER, I RECEIVE " + msg.toString());
-        this.coordinatorID = msg.getMsg().newCoordinatorId;
-//        if (msg.getMsg().replicaId == this.id || !this.isElectionInProgress()) {
-//            return;
-//        }
-        // Call the callback function to notify that a new coordinator has been elected
-        this.callbackOnCoordinatorElected(this.coordinatorID);
+        this.newCoordinator(msg.getMsg().newCoordinatorId);
         // If this replica is the new coordinator, perform any necessary actions
         if (msg.getMsg().newCoordinatorId == this.id) {
             this.onBecameCoordinator();
@@ -793,10 +792,10 @@ public class Replica extends AbstractReplica {
      */
     public static class CoordinatorHeartbeat implements Serializable {
         /** The ID of the coordinator sending the heartbeat */
-        public final int coordinatorId;
+        public final int currentCoordinatorId;
         /** The timestamp of the heartbeat */
         public CoordinatorHeartbeat(int coordinatorId) {
-            this.coordinatorId = coordinatorId;
+            this.currentCoordinatorId = coordinatorId;
         }
     }
     /**
