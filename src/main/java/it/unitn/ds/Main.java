@@ -48,6 +48,7 @@ public class Main {
                             Client.props(2000, 2000, defaultTargetReplica),
                             "Client_" + i));
         }
+
 //        InitSystem clientInitMsg = new InitSystem(replicas, COORDINATOR_ID);
 //        for (Map.Entry<Integer, ActorRef> entry : clients.entrySet()) {
 //            entry.getValue().tell(initMsg, ActorRef.noSender());
@@ -61,7 +62,7 @@ public class Main {
 //            e.printStackTrace();
 //        }
 //        clients.get(1).tell(new AbstractClient.ReadRequest(3,replicas.get(2)), Actor.noSender());
-
+//        replicas.get(0).tell(new AbstractReplica.Crash(AbstractReplica.Crash.Type.Now, 0), Actor.noSender());
         try {
             // Wait for 10 seconds to let the system run
             Thread.sleep(10000);
