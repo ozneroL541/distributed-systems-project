@@ -355,7 +355,7 @@ public class Replica extends AbstractReplica {
             case TimeOut.TimeoutType.UpdateRequest:
             case TimeOut.TimeoutType.WriteRequest:
                 debug("SIAMSO CRASHDHAHFHDSHFHDFHDHSAFHHDHFHHFHHFH");
-                this.onCoordinatorCrash();
+                this.coordinatorCrashed();
                 break;
             case TimeOut.TimeoutType.Heartbeat:
                 debug("TIMEOUT on HeartBeat");
@@ -585,12 +585,19 @@ public class Replica extends AbstractReplica {
         }
     }
     /**
-     * Handle a coordinator crash by removing it from the 
-     * list of replicas and starting an election.
+     * Acnowledge the crash of the coordinator by removing it from the list of replicas and starting an election if necessary.
      */
-    private void onCoordinatorCrash() {
+    private void coordinatorCrashed() {
         this.nodeCrashed(this.coordinatorID);
-        // TODO change behavior to start an election only if this replica is not the coordinator
+    }
+    /**
+     * Handle the event when the coordinator crashes.
+     */
+    private void onCoordnatorCrash() {
+        if (!this.isElectionInProgress()) {
+            this.startElection();
+        }
+        //TODO: Change receiver
     }
     /**
      * Handle the event when this replica becomes the coordinator.
@@ -674,8 +681,8 @@ public class Replica extends AbstractReplica {
     private void nodeCrashed(int id){
         try {
             this.replicas.remove((Integer) id);
-            if (this.coordinatorID == id && !this.isElectionInProgress()) {
-                this.startElection();
+            if (this.coordinatorID == id) {
+                this.onCoordnatorCrash();
             }
         } catch (Exception e) {
             debug("Error while removing crashed node: " + e.getMessage());
@@ -820,7 +827,7 @@ public class Replica extends AbstractReplica {
         if (this.isCoordinator()) {
             this.sendHeartbeat();
         } else {
-            this.onCoordinatorCrash();
+            this.coordinatorCrashed();
         }
     }
     /**
