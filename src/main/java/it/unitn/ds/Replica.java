@@ -629,7 +629,7 @@ public class Replica extends AbstractReplica {
         }
     }
     private void onUpdateRequest(Replica.UpdateRequest msg) {
-        log("Received an Update request from coordinator with content: {index:"+msg.writeRequest.index+", value:"+msg.writeRequest.value+"}");
+        log("Received an Update request from coordinator with content: {index:"+msg.writeRequest.index+", value:"+msg.writeRequest.value+"} and id: "+ msg.identifier.getE()+":"+msg.identifier.getI());
         // cancel the WriteRequest timeout
         Queue<Cancellable> timeouts = this.writeRequestTimeouts.get(msg.writeRequest);
         if ( timeouts != null) {
