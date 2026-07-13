@@ -6,7 +6,6 @@ import akka.actor.Props;
 import it.unitn.ds.AbstractClient.WriteRequest;
 import it.unitn.ds.TimeOut.TimeoutType;
 import scala.concurrent.duration.Duration;
-import scala.math.Ordered;
 
 import java.io.Serializable;
 import java.util.*;
@@ -378,16 +377,7 @@ public class Replica extends AbstractReplica {
         debug("New positions is: "+ Arrays.toString(this.positions));
         debug("pending write"+ pendingWrites.toString());
 
-        Optional<ClientWrite> pendingWrite = this.pendingWrites.stream()
-                .filter(p -> (p.writeRequest.index == writeRequest.index && p.writeRequest.value == writeRequest.value))
-                .findFirst();
-        if (pendingWrite.isPresent()) {
-            pendingWrite.get().clientRef.tell(
-                    new Replica.ClientACK(this.getSelf(), new AbstractClient.WriteResult(true, writeRequest.index, writeRequest.value, this.id)),
-//                    new AbstractClient.WriteResult(true, writeRequest.index, writeRequest.value, this.id),
-                    this.getSelf());
-            this.pendingWrites.remove(pendingWrite.get());
-        }
+        getPendingWrite(writeRequest);
     }
 
     private void onReadRequest(AbstractClient.ReadRequest msg) {
@@ -1051,20 +1041,10 @@ public class Replica extends AbstractReplica {
             if (this.updateClock.compareTo(updateClock) > 0 ) {
                 continue;
             }
-            AbstractClient.WriteRequest writeRequest = msg.missingHistory.get(updateClock);
-            this.positions[writeRequest.index] = writeRequest.value;
-            this.history.put(updateClock.clone(),new AbstractClient.WriteRequest(writeRequest.index,writeRequest.value,writeRequest.replica));
+            AbstractClient.WriteRequest writeRequest = retrieveWriteRequest(msg, updateClock);
             this.updateClock.syncClock(updateClock);
             // ACK the client
-            Optional<ClientWrite> pendingWrite = this.pendingWrites.stream()
-                    .filter(p -> (p.writeRequest.index == writeRequest.index && p.writeRequest.value == writeRequest.value))
-                    .findFirst();
-            if (pendingWrite.isPresent()) {
-                pendingWrite.get().clientRef.tell(
-                        new Replica.ClientACK(this.getSelf(), new AbstractClient.WriteResult(true, writeRequest.index, writeRequest.value, this.id)),
-                        this.getSelf());
-                this.pendingWrites.remove(pendingWrite.get());
-            }
+            getPendingWrite(writeRequest);
         }
         this.waitingForWriteOkUpdateClock.syncClock(this.updateClock);
         this.cancelAllWriteRequestTimeOut();
@@ -1077,24 +1057,29 @@ public class Replica extends AbstractReplica {
         }
         this.syncMessage = null;
     }
+    private AbstractClient.WriteRequest retrieveWriteRequest(Synchronization msg, UpdateClock updateClock) {
+        AbstractClient.WriteRequest writeRequest = msg.missingHistory.get(updateClock);
+        this.positions[writeRequest.index] = writeRequest.value;
+        this.history.put(updateClock.clone(),new AbstractClient.WriteRequest(writeRequest.index,writeRequest.value,writeRequest.replica));
+        return writeRequest;
+    }
+    private void getPendingWrite(AbstractClient.WriteRequest writeRequest) {
+        Optional<ClientWrite> pendingWrite = this.pendingWrites.stream()
+                .filter(p -> (p.writeRequest.index == writeRequest.index && p.writeRequest.value == writeRequest.value))
+                .findFirst();
+        if (pendingWrite.isPresent()) {
+            pendingWrite.get().clientRef.tell(
+                    new Replica.ClientACK(this.getSelf(), new AbstractClient.WriteResult(true, writeRequest.index, writeRequest.value, this.id)),
+                    this.getSelf());
+            this.pendingWrites.remove(pendingWrite.get());
+        }
+    }
 
     private void updateHistory() {
         List<UpdateClock> ordered_clock = this.waitingForWriteOK.keySet().stream().sorted().toList();
         for (UpdateClock clk : ordered_clock) {
-            AbstractClient.WriteRequest writeRequest = this.waitingForWriteOK.get(clk);
-            this.positions[writeRequest.index] = writeRequest.value;
-            this.history.put(clk.clone(), new AbstractClient.WriteRequest(writeRequest.index, writeRequest.value, writeRequest.replica));
-            // ACK the client
-            Optional<ClientWrite> pendingWrite = this.pendingWrites.stream()
-                    .filter(p -> (p.writeRequest.index == writeRequest.index && p.writeRequest.value == writeRequest.value))
-                    .findFirst();
-            if (pendingWrite.isPresent()) {
-                pendingWrite.get().clientRef.tell(
-                        new Replica.ClientACK(this.getSelf(), new AbstractClient.WriteResult(true, writeRequest.index, writeRequest.value, this.id)),
-                        this.getSelf());
-                this.pendingWrites.remove(pendingWrite.get());
-                // TODO: THIS ARE duplicated LINES. CONVERT IN A FUNCTION?????
-            }
+            AbstractClient.WriteRequest writeRequest = this.retrieveWriteRequest(syncMessage, clk);
+            getPendingWrite(writeRequest);
         }
         cancelAllUpdateRequestTimeOut();
         this.waitingForWriteOK.clear();
