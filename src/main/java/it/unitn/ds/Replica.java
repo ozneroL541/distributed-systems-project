@@ -691,11 +691,11 @@ public class Replica extends AbstractReplica {
      * Handle the event when the coordinator has crashed by starting a new election if one is not already in progress.
      */
     private void onCoordinatorCrash() {
-        getContext().become(createElectionReceive());
         if (!this.isElectionInProgress()) {
             this.startElection();
         }
         // TODO: Change receiver
+        getContext().become(createElectionReceive());
     }
     /**
      * Handle the event when a new coordinator is elected.
@@ -814,7 +814,6 @@ public class Replica extends AbstractReplica {
             log("I'm not ignoring this message");
             if (!this.isElectionInProgress()) {
                 this.callbackOnElectionStarted(this.coordinatorID);
-                getContext().become(createElectionReceive());
             }
             this.electionInProgress = msg.getMsg().electionStarter;
             this.coordinatorCrashed();
@@ -974,9 +973,12 @@ public class Replica extends AbstractReplica {
      * Otherwise, handle the coordinator crash.
      */
     private void onHeartbeatTimeout() {
+        // If the coordinator is this replica, send a heartbeat message
         if (this.isCoordinator()) {
             this.sendHeartbeat();
-        } else {
+        }
+        // Otherwise, handle the coordinator crash 
+        else {
             this.coordinatorCrashed();
         }
     }
