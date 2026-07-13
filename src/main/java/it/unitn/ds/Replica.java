@@ -1003,7 +1003,7 @@ public class Replica extends AbstractReplica {
      * @param msg the heartbeat message
      */
     private void onHeartbeat(CoordinatorHeartbeat msg) {
-        debug("Received HEARTBEAT from: " + msg.currentCoordinatorId);
+//        debug("Received HEARTBEAT from: " + msg.currentCoordinatorId);
         /** Handle a heartbeat message from the coordinator */
         long timeout = (long)COORDINATOR_BEAT_INTERVAL;
         // If this replica is the coordinator
@@ -1013,7 +1013,7 @@ public class Replica extends AbstractReplica {
         }
         // Cancel the previous heartbeat timeout
         if (this.coordinatorHeartbeatTimeout != null) {
-            debug("REMOVE!");
+//            debug("REMOVE!");
             this.coordinatorHeartbeatTimeout.cancel();
         }
         // Set a new heartbeat timeout
@@ -1025,10 +1025,10 @@ public class Replica extends AbstractReplica {
      * Otherwise, handle the coordinator crash.
      */
     private void onHeartbeatTimeout() {
-        debug("Heartbeat timed out.");
+//        debug("Heartbeat timed out.");
         // If the coordinator is this replica, send a heartbeat message
         if (this.isCoordinator()) {
-            debug("I am the coord");
+//            debug("I am the coord");
             this.sendHeartbeat();
         }
         // Otherwise, handle the coordinator crash 

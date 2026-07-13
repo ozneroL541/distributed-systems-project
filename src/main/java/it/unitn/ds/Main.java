@@ -23,6 +23,7 @@ public class Main {
         Logger.setDebugEnabled(true);
 
         verifyTotalOrderOnCoordinatorCrash();
+        crashOnWriteOK();
 
         System.out.println("\n========================================");
         System.out.println("END");
@@ -31,9 +32,9 @@ public class Main {
     }
 
     private static void verifyTotalOrderOnCoordinatorCrash() throws InterruptedException {
-        System.out.println("========================================");
-        System.out.println("Verify total order on coordinator crash");
-        System.out.println("========================================\n");
+        System.out.println("================================================");
+        System.out.println("Verify total order and sync on coordinator crash");
+        System.out.println("================================================\n");
         Logger.setDestinationStdout();
         Logger.setDebugEnabled(true);
         final int N_REPLICAS = 21;
@@ -58,17 +59,35 @@ public class Main {
         clients.get(2).tell(new AbstractClient.ReadRequest(2, replica.get(18)), ActorRef.noSender());
         clients.get(3).tell(new AbstractClient.ReadRequest(12, replica.get(18)), ActorRef.noSender());
         clients.get(4).tell(new AbstractClient.ReadRequest(13, replica.get(18)), ActorRef.noSender());
-
-        Thread.sleep(1000);
-
         system.terminate();
-
-
-
-
-
-
     }
+
+
+    private static void crashOnWriteOK() throws InterruptedException {
+        System.out.println("=================================================================");
+        System.out.println("Crash coordinator on writeOK, verify that the update is preserved");
+        System.out.println("=================================================================\n");
+        Logger.setDestinationStdout();
+        Logger.setDebugEnabled(true);
+        final int N_REPLICAS = 5;
+        final int COORDINATOR_ID = 0;
+        final int N_CLIENT = 3;
+        final ActorSystem system = ActorSystem.create("verifyWriteOK");
+
+        Map<Integer, ActorRef> replica = createReplica(system, N_REPLICAS, COORDINATOR_ID);
+        Map<Integer, ActorRef> clients = createClients(system, N_CLIENT);
+
+        replica.get(0).tell(new AbstractReplica.Crash(AbstractReplica.Crash.Type.WriteOK, 2), ActorRef.noSender());
+        Thread.sleep(100);
+        clients.get(0).tell(new AbstractClient.WriteRequest(2, 2, replica.get(1)), ActorRef.noSender());
+        clients.get(1).tell(new AbstractClient.WriteRequest(3, 33, replica.get(2)), ActorRef.noSender());
+        Thread.sleep(1000);
+        System.out.println("## READ RESULT ##");
+        clients.get(0).tell(new AbstractClient.ReadRequest(2, replica.get(2)), ActorRef.noSender());
+        clients.get(0).tell(new AbstractClient.ReadRequest(3, replica.get(3)), ActorRef.noSender());
+        system.terminate();
+    }
+
 
     private static Map<Integer, ActorRef> createReplica(ActorSystem system, int N_REPLICAS, int COORDINATOR_ID) {
         Map<Integer, ActorRef> replicas = new HashMap<>(N_REPLICAS);
