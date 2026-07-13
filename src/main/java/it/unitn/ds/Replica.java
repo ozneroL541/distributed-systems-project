@@ -708,7 +708,6 @@ public class Replica extends AbstractReplica {
     private void onNewCoordinator() {
         this.callbackOnCoordinatorElected(this.coordinatorID);
         // TODO: Change receiver
-        getContext().become(createReceive());
     }
     /**
      * Update the coordinator ID and handle the event when a new coordinator is elected.
@@ -1019,6 +1018,7 @@ public class Replica extends AbstractReplica {
             this.positions[writeRequest.index] = writeRequest.value;
             this.history.put(updateClock.clone(),new AbstractClient.WriteRequest(writeRequest.index,writeRequest.value,writeRequest.replica));
             this.updateClock.syncClock(updateClock);
+            getContext().become(createReceive());
         }
     }
 }
