@@ -652,7 +652,7 @@ public class Replica extends AbstractReplica {
         debug("received ack from "+ getSender().path().name()+"for clock: "+ msg.identifier.getE()+msg.identifier.getI());
         Integer ACKnumber = UpdateACKCounter.get(msg.identifier);
         if (ACKnumber == null) {
-            debug("NULL????? "+ msg.identifier.getI() +" -- " +ACKnumber);
+            debug("ACKNumber null "+ msg.identifier.getI() +" -- " +ACKnumber);
             return;
         }
         ACKnumber += 1;
