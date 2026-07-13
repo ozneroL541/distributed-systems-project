@@ -28,6 +28,8 @@ public class Replica extends AbstractReplica {
     // ________________________________
     // Replica specific variables
     // ________________________________
+    /** The update clock for the replica that track the last update put in waitingForWriteOK */
+    private final UpdateClock waitingForWriteOkUpdateClock;
     /** scheduled crash type */
     private Crash.Type scheduled_crash_type;
     /** scheduled crash countdown */
@@ -60,6 +62,8 @@ public class Replica extends AbstractReplica {
     private final Map<UpdateClock, Integer> UpdateACKCounter = new HashMap<>();
     /** The update clock for the next message to be sent */
     private final UpdateClock nextMessageClock;
+    /** The lower update clock from all the replica, used to send all the missing update */
+    private final UpdateClock worstClock;
     /** 
      * Current election status, 
      * null if no election is in progress 
@@ -87,6 +91,8 @@ public class Replica extends AbstractReplica {
         super(id, minLatency, maxLatency, coordinatorBeatInterval, listener);
         this.updateClock = new UpdateClock();
         this.nextMessageClock = new UpdateClock();
+        this.waitingForWriteOkUpdateClock = new UpdateClock();
+        this.worstClock = new UpdateClock();
     }
 
     public static Props props(int id, int minLatency, int maxLatency, int coordinatorBeatInterval) {
@@ -107,7 +113,7 @@ public class Replica extends AbstractReplica {
 
     @Override
     public void crash(AbstractReplica.Crash how_to_crash) {
-        if (how_to_crash.type == Crash.Type.Now || how_to_crash.after_n_messages_of_type == 0 ) {
+        if (how_to_crash.type == Crash.Type.Now || how_to_crash.after_n_messages_of_type == 0) {
             log("Replica crashed");
             getContext().become(crashed());
         } else {
@@ -266,9 +272,12 @@ public class Replica extends AbstractReplica {
     }
 
     public static class Synchronization implements Serializable {
-        Map<UpdateClock, AbstractClient.WriteRequest> missingUpdate;
+        final List<UpdateClock> updateClocks;
+        final Map<UpdateClock, AbstractClient.WriteRequest>  missingUpdate;
 
-        public Synchronization(Map<UpdateClock, AbstractClient.WriteRequest> missingUpdate) {
+        public Synchronization(Map<UpdateClock, AbstractClient.WriteRequest> missingUpdate, UpdateClock worstClock) {
+            // keep only the key orderd and above the worstClock
+            this.updateClocks = missingUpdate.keySet().stream().sorted().filter(clk -> clk.compareTo(worstClock) >= 0).toList();
             this.missingUpdate = missingUpdate;
         }
     }
@@ -314,7 +323,8 @@ public class Replica extends AbstractReplica {
                 this.writeRequestTimeouts.remove(msg.writeRequest);
             }
         }
-        // add update to history
+        // add update to waiting for WriteOK
+        this.waitingForWriteOkUpdateClock.syncClock(msg.identifier);
         waitingForWriteOK.put(msg.identifier, msg.writeRequest);
         debug("Sending updateACK :" + msg.identifier.getI() +"---"+ msg.writeRequest.index +" "+msg.writeRequest.index);
         msg.coordinator.tell(new UpdateACK(msg.identifier), this.getSelf());
@@ -443,7 +453,7 @@ public class Replica extends AbstractReplica {
          * @param replica the replica that updates the message
          */
         public ElectionMessage updateMsg(Replica replica) {
-            final UpdateClock clock = replica.updateClock.clone();
+            final UpdateClock clock = replica.waitingForWriteOkUpdateClock.clone();
             this.candidates.put(replica.id, clock);
             this.deleteCrashedNodesFromCandidates(replica.replicas);
             return (ElectionMessage) this.clone();
@@ -723,7 +733,8 @@ public class Replica extends AbstractReplica {
     private void onBecameCoordinator() {
         this.sendHeartbeat();
         // preare the Sync message
-        Synchronization syncMessage = new Synchronization(this.history);
+        this.updateHistory();
+        Synchronization syncMessage = new Synchronization(this.history, this.worstClock);
         this.updateClock.incrementE();
         this.nextMessageClock.syncClock(this.updateClock);
         multicast(syncMessage, Crash.Type.Now); // TODO: SHOULD CRASH?
@@ -761,7 +772,8 @@ public class Replica extends AbstractReplica {
         this.newCoordinator(msg.getMsg().coordinatorElected.newCoordinatorId);
         // If this replica is the new coordinator, perform any necessary actions
         if (msg.getMsg().coordinatorElected.newCoordinatorId == this.id) {
-            this.onElectedCoordinator(msg.getMsg().worstClock);
+            this.worstClock.syncClock(msg.getMsg().worstClock);
+            this.onBecameCoordinator(); // TODO TROPPO PRESTO?
         }
         this.sendAckToSender(msg);
         // If an election is in progress, reset the election state and forward the message to the next replica
@@ -806,6 +818,8 @@ public class Replica extends AbstractReplica {
             if (bestCandidate != null) {
                 this.replicas = msg.getMsg().deleteCrashedNodesFromList(this.replicas);
                 /** Coordinator elected message */
+                // TEST
+                this.newCoordinator(bestCandidate);
                 ElectionOver coordinatorElected = new ElectionOver(
                         this.id, 
                         new ElectionChooseCoordinator(
@@ -1010,7 +1024,16 @@ public class Replica extends AbstractReplica {
 
 
     private void onSyncMessage(Synchronization msg) {
-        for (UpdateClock updateClock : msg.missingUpdate.keySet()) {
+//        for (UpdateClock updateClock : msg.missingUpdate.keySet()) {
+//            if (this.updateClock.compareTo(updateClock) > 0 ) {
+//                continue;
+//            }
+//            AbstractClient.WriteRequest writeRequest = msg.missingUpdate.get(updateClock);
+//            this.positions[writeRequest.index] = writeRequest.value;
+//            this.history.put(updateClock.clone(),new AbstractClient.WriteRequest(writeRequest.index,writeRequest.value,writeRequest.replica));
+//            this.updateClock.syncClock(updateClock);
+//        }
+        for (UpdateClock updateClock : msg.updateClocks) {
             if (this.updateClock.compareTo(updateClock) > 0 ) {
                 continue;
             }
@@ -1018,7 +1041,66 @@ public class Replica extends AbstractReplica {
             this.positions[writeRequest.index] = writeRequest.value;
             this.history.put(updateClock.clone(),new AbstractClient.WriteRequest(writeRequest.index,writeRequest.value,writeRequest.replica));
             this.updateClock.syncClock(updateClock);
-            getContext().become(createReceive());
+            // ACK the client
+            Optional<ClientWrite> pendingWrite = this.pendingWrites.stream()
+                    .filter(p -> (p.writeRequest.index == writeRequest.index && p.writeRequest.value == writeRequest.value))
+                    .findFirst();
+            if (pendingWrite.isPresent()) {
+                pendingWrite.get().clientRef.tell(
+                        new Replica.ClientACK(this.getSelf(), new AbstractClient.WriteResult(true, writeRequest.index, writeRequest.value, this.id)),
+                        this.getSelf());
+                this.pendingWrites.remove(pendingWrite.get());
+            }
         }
+        this.cancelAllWriteRequestTimeOut();
+        getContext().become(createReceive());
+        debug("HEY! "+this.coordinatorID);
+        for (Replica.ClientWrite w : this.pendingWrites) {
+            replicas.get(this.coordinatorID).tell(w.writeRequest, this.getSelf());
+            this.writeRequestTimeouts.computeIfAbsent(w.writeRequest, k -> new ArrayDeque<>())
+                    .add(setTimeout(this.getMaxLatencyPlusTolerance(), new TimeOut(TimeOut.TimeoutType.WriteRequest)));
+            // TODO how much time to wait for coordinator?
+        }
+    }
+
+    private void updateHistory() {
+        List<UpdateClock> ordered_clock = this.waitingForWriteOK.keySet().stream().sorted().toList();
+        for (UpdateClock clk : ordered_clock) {
+            AbstractClient.WriteRequest writeRequest = this.waitingForWriteOK.get(clk);
+            this.positions[writeRequest.index] = writeRequest.value;
+            this.history.put(clk.clone(), new AbstractClient.WriteRequest(writeRequest.index, writeRequest.value, writeRequest.replica));
+            // ACK the client
+            Optional<ClientWrite> pendingWrite = this.pendingWrites.stream()
+                    .filter(p -> (p.writeRequest.index == writeRequest.index && p.writeRequest.value == writeRequest.value))
+                    .findFirst();
+            if (pendingWrite.isPresent()) {
+                pendingWrite.get().clientRef.tell(
+                        new Replica.ClientACK(this.getSelf(), new AbstractClient.WriteResult(true, writeRequest.index, writeRequest.value, this.id)),
+                        this.getSelf());
+                this.pendingWrites.remove(pendingWrite.get()); // TODO: THIS ARE duplicated LINES. CONVERT IN A FUNCTION?????
+            } else {
+                // TODO: SEND ACK TO CLIENT EVEN IF YOU ARE NOT THE ONE THAT RECEIVE THE MESSAGE, use the writeRequest.replica in some way
+            }
+
+        }
+        cancelAllUpdateRequestTimeOut();
+        this.waitingForWriteOK.clear();
+    }
+
+    private void cancelAllUpdateRequestTimeOut() {
+        for (Cancellable timeout : this.updateRequestTimeouts.values()) {
+            timeout.cancel();
+        }
+        this.updateRequestTimeouts.clear();
+
+    }
+    private void cancelAllWriteRequestTimeOut() {
+        for (Queue<Cancellable> timeout : this.writeRequestTimeouts.values()) {
+            for (Cancellable t : timeout) {
+                t.cancel();
+            }
+        }
+        this.writeRequestTimeouts.clear();
+
     }
 }
