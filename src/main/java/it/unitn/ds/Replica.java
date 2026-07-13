@@ -226,9 +226,6 @@ public class Replica extends AbstractReplica {
                         return;
                     }
                 }
-                default -> {
-                    // do nothing
-                }
             }
 
         }
@@ -720,9 +717,6 @@ public class Replica extends AbstractReplica {
      */
     private void onNewCoordinator() {
         this.callbackOnCoordinatorElected(this.coordinatorID);
-        if (this.isCoordinator()) {
-            this.onBecameCoordinator();
-        }
         // TODO: Change receiver
     }
     /**
@@ -763,14 +757,10 @@ public class Replica extends AbstractReplica {
      * Handle the event when this replica is elected as the new coordinator by sending a heartbeat and performing any necessary actions.
      * @param worstClock the worst clock value among the replicas
      */
-    private void onElectedCoordinator(int newCoordinatorId, UpdateClock worstClock) {
-        this.newCoordinator(newCoordinatorId);
+    private void onElectedCoordinator(UpdateClock worstClock) {
+        this.onBecameCoordinator();
         // TODO: implement any additional logic needed when this replica becomes the coordinator
-        if (this.isCoordinator()) {
-            final Map<UpdateClock, AbstractClient.WriteRequest> shortnedHistory = this.getShortnedHistory(worstClock);
-            // TODO: ask @AleCornella what it means
-            this.worstClock.syncClock(worstClock);
-        }
+        final Map<UpdateClock, AbstractClient.WriteRequest> shortnedHistory = this.getShortnedHistory(worstClock);
     }
     /**
      * Handle a coordinator elected message by updating the coordinator ID and
@@ -779,8 +769,12 @@ public class Replica extends AbstractReplica {
      */
     private void onElectionOver(ElectionOver msg) {
         debug("ELECTION IS OVER, I RECEIVE " + msg.toString());
-        // Ackowledge the receipt of the coordinator elected message to the sender
-        this.onElectedCoordinator(msg.getMsg().coordinatorElected.newCoordinatorId, msg.getMsg().worstClock);
+        this.newCoordinator(msg.getMsg().coordinatorElected.newCoordinatorId);
+        // If this replica is the new coordinator, perform any necessary actions
+        if (msg.getMsg().coordinatorElected.newCoordinatorId == this.id) {
+            this.worstClock.syncClock(msg.getMsg().worstClock);
+            this.onBecameCoordinator(); // TODO TROPPO PRESTO?
+        }
         this.sendAckToSender(msg);
         // If an election is in progress, reset the election state and forward the message to the next replica
         if (!this.isElectionInProgress()) {
