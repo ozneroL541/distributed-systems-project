@@ -213,30 +213,9 @@ public class Replica extends AbstractReplica {
     void multicast(Serializable m, Crash.Type crash_type) {
         for (ActorRef r : replicas.values()) {
             r.tell(m, this.getSelf());
-            switch (crash_type) {
-                case Heartbeat -> {
-                    // CRASH Heartbeat
-                    if(this.checkIfTimeToCrash(Crash.Type.Heartbeat)) {
-                        return;
-                    }
-                }
-                case Update -> {
-                    // CRASH UPDATE
-                    if(this.checkIfTimeToCrash(Crash.Type.Update)) {
-                        return;
-                    }
-                }
-                case WriteOK -> {
-                    // CRASH WRITE_OK
-                    if(this.checkIfTimeToCrash(Crash.Type.WriteOK)) {
-                        return;
-                    }
-                }
-                default -> {
-                    // No crash
-                }
+            if (crash_type != null && this.checkIfTimeToCrash(crash_type)) {
+                return;
             }
-
         }
     }
 
@@ -747,10 +726,14 @@ public class Replica extends AbstractReplica {
         this.sendHeartbeat();
         // preare the Sync message
         this.updateHistory();
+        // Create a Synchronization message with the current history and worst clock
         Synchronization syncMessage = new Synchronization(this.history, this.worstClock);
+        // Go to next epoch
         this.updateClock.incrementE();
+        // Update the next message clock to synchronize with the current update clock
         this.nextMessageClock.syncClock(this.updateClock);
-        multicast(syncMessage, Crash.Type.Now); // TODO: SHOULD CRASH?
+        // send the Sync message to all replicas
+        this.multicast(syncMessage, null);
     }
     /**
      * Get the shortened history of updates that are more recent than the given clock.
