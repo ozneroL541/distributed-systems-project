@@ -1085,10 +1085,7 @@ public class Replica extends AbstractReplica {
                         this.getSelf());
                 this.pendingWrites.remove(pendingWrite.get());
                 // TODO: THIS ARE duplicated LINES. CONVERT IN A FUNCTION?????
-            } else {
-                // TODO: SEND ACK TO CLIENT EVEN IF YOU ARE NOT THE ONE THAT RECEIVE THE MESSAGE, use the writeRequest.replica in some way
             }
-
         }
         cancelAllUpdateRequestTimeOut();
         this.waitingForWriteOK.clear();
