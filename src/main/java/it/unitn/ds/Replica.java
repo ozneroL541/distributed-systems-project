@@ -777,6 +777,7 @@ public class Replica extends AbstractReplica {
      * Handle the event when this replica becomes the coordinator.
      */
     private void onBecameCoordinator() {
+        debug("I am the new COORDINATOR");
         this.sendHeartbeat();
         // preare the Sync message
         this.updateHistory();
@@ -857,7 +858,7 @@ public class Replica extends AbstractReplica {
      * @param msg the election message
      */
     private void onElectionMessage(Election msg) {
-        debug("Recived electionMSG:" + msg.toString()+"|"+msg.msg.toString()+"|"+" from: "+getSender().path().name());
+        debug("Received ElectionMSG:" + msg.toString()+"|"+msg.msg.toString()+"|"+" from: "+getSender().path().name());
         if (msg.getMsg().isElectionOver(electionInProgress)) {
             /** Best candidate for coordinator */
             Integer bestCandidate = msg.getMsg().getBestCandidate();
@@ -988,6 +989,7 @@ public class Replica extends AbstractReplica {
      * @param msg the heartbeat message
      */
     private void onHeartbeat(CoordinatorHeartbeat msg) {
+        debug("Received HEARTBEAT from: " + msg.currentCoordinatorId);
         /** Handle a heartbeat message from the coordinator */
         long timeout = (long)COORDINATOR_BEAT_INTERVAL;
         // If this replica is the coordinator
@@ -1008,6 +1010,7 @@ public class Replica extends AbstractReplica {
      * Otherwise, handle the coordinator crash.
      */
     private void onHeartbeatTimeout() {
+        debug("Heartbeat timed out.");
         // If the coordinator is this replica, send a heartbeat message
         if (this.isCoordinator()) {
             this.sendHeartbeat();
@@ -1021,6 +1024,7 @@ public class Replica extends AbstractReplica {
      * Send a heartbeat message to all replicas.
      */
     private void sendHeartbeat() {
+        debug("Sending HEARTBEAT");
         this.multicast(new CoordinatorHeartbeat(this.id), Crash.Type.Heartbeat);
     }
 
@@ -1050,7 +1054,7 @@ public class Replica extends AbstractReplica {
             WriteOK m = this.writeOKQueue.remove();
             this.onWriteOK(m);
         }
-        debug("HEY! "+this.coordinatorID);
+        debug("NEW COORDINATOR: " + this.coordinatorID);
         for (Replica.ClientWrite w : this.pendingWrites) {
             replicas.get(this.coordinatorID).tell(w.writeRequest, this.getSelf());
             this.writeRequestTimeouts.computeIfAbsent(w.writeRequest, k -> new ArrayDeque<>())
