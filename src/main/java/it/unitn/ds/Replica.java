@@ -211,8 +211,11 @@ public class Replica extends AbstractReplica {
      * @param m the message to multicast
      */
     void multicast(Serializable m, Crash.Type crash_type) {
+        // Send the message to all replicas
         for (ActorRef r : replicas.values()) {
+            // Send the message to the replica
             r.tell(m, this.getSelf());
+            // Check if this replica is scheduled to crash after sending a message of this type
             if (crash_type != null && this.checkIfTimeToCrash(crash_type)) {
                 return;
             }
