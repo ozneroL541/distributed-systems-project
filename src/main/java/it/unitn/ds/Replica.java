@@ -66,6 +66,8 @@ public class Replica extends AbstractReplica {
     private final UpdateClock nextMessageClock;
     /** The lower update clock from all the replica, used to send all the missing update */
     private final UpdateClock worstClock;
+    /** How long to wait for a timeout */
+    private final long TIMEOUT_DELAY = this.getMaxLatencyPlusTolerance();
     /** 
      * Current election status, 
      * null if no election is in progress 
@@ -312,8 +314,7 @@ public class Replica extends AbstractReplica {
             ActorRef coordinator = this.replicas.get(this.coordinatorID);
             coordinator.tell(msg, this.getSelf());
             this.writeRequestTimeouts.computeIfAbsent(msg, k -> new ArrayDeque<>())
-                    .add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeOut.TimeoutType.WriteRequest)));
-                    // TODO how much time to wait for coordinator?
+                    .add(setTimeout(TIMEOUT_DELAY,new TimeOut(TimeOut.TimeoutType.WriteRequest)));
         }
     }
 
@@ -333,8 +334,7 @@ public class Replica extends AbstractReplica {
         debug("Sending updateACK :" + msg.identifier.getI() +"---"+ msg.writeRequest.index +" "+msg.writeRequest.index);
         msg.coordinator.tell(new UpdateACK(msg.identifier), this.getSelf());
         this.updateRequestTimeouts
-                .putIfAbsent(msg.identifier, setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeOut.TimeoutType.UpdateRequest)));
-                // TODO how much time to wait for coordinator?
+                .putIfAbsent(msg.identifier, setTimeout(TIMEOUT_DELAY,new TimeOut(TimeOut.TimeoutType.UpdateRequest)));
         // CRASH UPDATE
         this.checkIfTimeToCrash(Crash.Type.Update);
     }
@@ -708,7 +708,7 @@ public class Replica extends AbstractReplica {
         if (!this.isElectionInProgress()) {
             this.startElection();
         }
-        // TODO: Change receiver
+        // Change the receiver to handle election messages
         getContext().become(createElectionReceive());
         // Delete heartbeat timeout if it exists
         if (this.coordinatorHeartbeatTimeout != null) {
@@ -720,11 +720,12 @@ public class Replica extends AbstractReplica {
      * Handle the event when a new coordinator is elected.
      */
     private void onNewCoordinator() {
+        // Callback to notify that a new coordinator has been elected
         this.callbackOnCoordinatorElected(this.coordinatorID);
+        // If this replica is the new coordinator, perform necessary actions
         if (this.isCoordinator()) {
             this.onBecameCoordinator();
         }
-        // TODO: Change receiver
     }
     /**
      * Update the coordinator ID and handle the event when a new coordinator is elected.
