@@ -5,6 +5,8 @@ set -eu
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
+gradle wrapper --gradle-version 9.2.1
+
 run_test() {
     test_class=$1
     printf 'Running %s...\n' "$test_class"
