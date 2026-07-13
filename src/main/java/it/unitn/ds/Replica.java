@@ -1007,8 +1007,7 @@ public class Replica extends AbstractReplica {
      * Send a heartbeat message to all replicas.
      */
     private void sendHeartbeat() {
-        this.multicast(new CoordinatorHeartbeat(this.id), Crash.Type.Now);
-        // TODO: SHOULD CRASH?
+        this.multicast(new CoordinatorHeartbeat(this.id), Crash.Type.Heartbeat);
     }
     /**
      * Check if this replica is the coordinator.
