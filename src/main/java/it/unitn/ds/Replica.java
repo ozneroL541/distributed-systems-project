@@ -67,7 +67,7 @@ public class Replica extends AbstractReplica {
          * @param worstClock the worst clock value among the replicas
          */
         public Synchronization(Map<UpdateClock, WriteRequest> history, UpdateClock worstClock) {
-            this.missingHistory = (Map<UpdateClock, WriteRequest>) Replica.shortHistory(history, worstClock);
+            this.missingHistory = new TreeMap<>(Replica.shortHistory(history, worstClock));
         }
     }
     /**
@@ -924,8 +924,8 @@ public class Replica extends AbstractReplica {
         if (this.electionTimeouts != null && !this.electionTimeouts.isEmpty()) {
             Serializable first = this.electionTimeouts.keySet().iterator().next();
             this.electionTimeouts.remove(first);
-            Election newMsg = new Election(this.nextReplicaID, (ElectionMessage) first);
-            this.sendToNextReplica(newMsg);
+            MessageWithACK electionMessage = new Election(this.id, (ElectionMessage) first);
+            this.sendToNextReplica(electionMessage);
         }
     }
     /**
