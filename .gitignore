@@ -58,3 +58,5 @@ gradle-app.setting
 *.fdb_latexmk
 *.fls
 *.synctex.gz
+*.gz
+**.synctex.gz
