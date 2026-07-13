@@ -737,6 +737,7 @@ public class Replica extends AbstractReplica {
     private void onCoordinatorCrash() {
         // Delete heartbeat timeout if it exists
         if (this.coordinatorHeartbeatTimeout != null) {
+            debug("HEARTBIT ELEIMINATO PRECHé* CRASH");
             this.coordinatorHeartbeatTimeout.cancel();
             this.coordinatorHeartbeatTimeout = null;
         }
@@ -753,6 +754,10 @@ public class Replica extends AbstractReplica {
         // Callback to notify that a new coordinator has been elected
         this.callbackOnCoordinatorElected(this.coordinatorID);
         // Reset heartbeat timeout since a new coordinator has been elected
+        debug("SETTINg");
+        if (this.coordinatorHeartbeatTimeout != null) {
+            this.coordinatorHeartbeatTimeout.cancel();
+        }
         this.coordinatorHeartbeatTimeout = this.setTimeout( COORDINATOR_BEAT_INTERVAL * TIMEOUT_DELAY, new TimeOut(TimeOut.TimeoutType.Heartbeat));
         // If this replica is the new coordinator, perform necessary actions
         if (this.isCoordinator()) {
@@ -769,6 +774,7 @@ public class Replica extends AbstractReplica {
             return;
         }
         // Update the coordinator ID
+        log("SETTTING COORD AS " +  newCoordinatorId);
         this.coordinatorID = newCoordinatorId;
         // Handle the event when a new coordinator is elected
         this.onNewCoordinator();
@@ -822,6 +828,7 @@ public class Replica extends AbstractReplica {
         this.onElectedCoordinator(msg.getMsg().coordinatorElected.newCoordinatorId, msg.getMsg().worstClock);
         // Send an acknowledgment to the sender of the election message
         this.sendAckToSender(msg);
+        debug("PO " + this.isElectionInProgress());
         // If an election is in progress, reset the election state and forward the message to the next replica
         if (!this.isElectionInProgress()) {
             return;
@@ -829,10 +836,15 @@ public class Replica extends AbstractReplica {
         // Reset the election state and forward the message to the next replica
         this.electionInProgress = null;
         // Avoid infinite loops by checking if the message is from this replica
+        debug("PO " + msg.getMsg().coordinatorElected.replicaId);
         if (msg.getMsg().coordinatorElected.replicaId == this.id) {
+            if (this.syncMessage != null) {
+                this.onSyncMessage(this.syncMessage);
+            }
             return;
         }
         this.sendToNextReplica(msg);
+        log("che è SYNC?" + msg.toString());
         if (this.syncMessage != null) {
             this.onSyncMessage(this.syncMessage);
         }
@@ -872,11 +884,12 @@ public class Replica extends AbstractReplica {
                                 msg.getMsg().getWorstClock()
                             )
                     );
+                log("PO" + String.valueOf(this.isElectionInProgress()));
                 this.sendToNextReplica(coordinatorElected);
                 this.newCoordinator(bestCandidate);
             }
-        } else if (!this.isElectionInProgress() || this.electionInProgress > msg.getMsg().electionStarter) {
-            log("I'm not ignoring this message");
+        } else if (!this.isElectionInProgress() || this.electionInProgress <= msg.getMsg().electionStarter) {
+            log("I'm not ignoring this message from " +  msg.getMsg().electionStarter +" | my id  " + this.electionInProgress);
             if (!this.isElectionInProgress()) {
                 this.callbackOnElectionStarted(this.coordinatorID);
             }
@@ -885,6 +898,7 @@ public class Replica extends AbstractReplica {
             msg.updateMsg(this);
             this.sendToNextReplica(msg);
         }
+        log("IM IGNORING THIS MESSAGE FIR " + msg.getMsg().electionStarter +" | my id  " + this.electionInProgress);
         this.sendAckToSender(msg);
     }
     /**
@@ -999,6 +1013,7 @@ public class Replica extends AbstractReplica {
         }
         // Cancel the previous heartbeat timeout
         if (this.coordinatorHeartbeatTimeout != null) {
+            debug("REMOVE!");
             this.coordinatorHeartbeatTimeout.cancel();
         }
         // Set a new heartbeat timeout
@@ -1013,6 +1028,7 @@ public class Replica extends AbstractReplica {
         debug("Heartbeat timed out.");
         // If the coordinator is this replica, send a heartbeat message
         if (this.isCoordinator()) {
+            debug("I am the coord");
             this.sendHeartbeat();
         }
         // Otherwise, handle the coordinator crash 
@@ -1031,6 +1047,7 @@ public class Replica extends AbstractReplica {
 
     private void onSyncMessage(Synchronization msg) {
         if (this.isElectionInProgress()) {
+            log("RECIVED SYNC MA NON SO COORD");
             this.syncMessage = msg;
             return;
         }
@@ -1054,7 +1071,7 @@ public class Replica extends AbstractReplica {
             WriteOK m = this.writeOKQueue.remove();
             this.onWriteOK(m);
         }
-        debug("NEW COORDINATOR: " + this.coordinatorID);
+        debug("SYNC NEW COORDINATOR: " + this.coordinatorID);
         for (Replica.ClientWrite w : this.pendingWrites) {
             replicas.get(this.coordinatorID).tell(w.writeRequest, this.getSelf());
             this.writeRequestTimeouts.computeIfAbsent(w.writeRequest, k -> new ArrayDeque<>())

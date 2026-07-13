@@ -52,14 +52,12 @@ public class Main {
         clients.get(3).tell(new AbstractClient.WriteRequest(12, 12, replica.get(11)), ActorRef.noSender());
         clients.get(4).tell(new AbstractClient.WriteRequest(13, 12, replica.get(11)), ActorRef.noSender());
         Thread.sleep(1000);
-        for (int i = 0; i < 4; i++) {
-            clients.get(0).tell(new AbstractClient.ReadRequest(8, replica.get(18)), ActorRef.noSender());
-            clients.get(1).tell(new AbstractClient.ReadRequest(7, replica.get(18)), ActorRef.noSender());
-            clients.get(2).tell(new AbstractClient.ReadRequest(2, replica.get(18)), ActorRef.noSender());
-            clients.get(3).tell(new AbstractClient.ReadRequest(12, replica.get(18)), ActorRef.noSender());
-            clients.get(4).tell(new AbstractClient.ReadRequest(13, replica.get(18)), ActorRef.noSender());
-            i++;
-        }
+        System.out.println("## READ RESULT ##");
+        clients.get(0).tell(new AbstractClient.ReadRequest(8, replica.get(18)), ActorRef.noSender());
+        clients.get(1).tell(new AbstractClient.ReadRequest(7, replica.get(18)), ActorRef.noSender());
+        clients.get(2).tell(new AbstractClient.ReadRequest(2, replica.get(18)), ActorRef.noSender());
+        clients.get(3).tell(new AbstractClient.ReadRequest(12, replica.get(18)), ActorRef.noSender());
+        clients.get(4).tell(new AbstractClient.ReadRequest(13, replica.get(18)), ActorRef.noSender());
 
         Thread.sleep(1000);
 
@@ -95,7 +93,7 @@ public class Main {
             Optional<ActorRef> defaultTargetReplica = Optional.empty();
             clients.put(i,
                     system.actorOf(
-                            Client.props(2000, 2000, defaultTargetReplica),
+                            Client.props(500, 1000, defaultTargetReplica),
                             "Client_" + i));
         }
         return clients;
