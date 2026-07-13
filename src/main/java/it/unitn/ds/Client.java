@@ -9,6 +9,14 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 public class Client extends AbstractClient {
+    public static Props props(long readTimeoutDelay, long writeTimeoutDelay, Optional<ActorRef> defaultTargetReplica) {
+        return Props.create(Client.class, () -> new Client(readTimeoutDelay, writeTimeoutDelay, defaultTargetReplica, Optional.empty()));
+    }
+    // Props method for automated tests
+    public static Props propsWithListener(long readTimeoutDelay, long writeTimeoutDelay, Optional<ActorRef> defaultTargetReplica, ActorRef listener) {
+        return Props.create(Client.class, () -> new Client(readTimeoutDelay, writeTimeoutDelay, defaultTargetReplica, Optional.ofNullable(listener)));
+    }
+
     /**
      * List of all alive replicas of the system.
      * Integer is the id of the replica,
@@ -16,20 +24,12 @@ public class Client extends AbstractClient {
      */
     /** HashMap to store Cancellable for timeout on the writeRequest message send to the coordinator */
     private final HashMap<String, Queue<Cancellable>> sendWriteRequestTimeouts = new HashMap<>();
+
     /** HashMap to store Cancellable for timeout on the writeRequest message send to the coordinator */
     private final HashMap<String, Queue<Cancellable>> sendReadRequestTimeouts = new HashMap<>();
 
     Client(long readTimeoutDelay, long writeTimeoutDelay, Optional<ActorRef> defaultTargetReplica, Optional<ActorRef> listener) {
         super(readTimeoutDelay, writeTimeoutDelay, listener, defaultTargetReplica);
-    }
-
-    public static Props props(long readTimeoutDelay, long writeTimeoutDelay, Optional<ActorRef> defaultTargetReplica) {
-        return Props.create(Client.class, () -> new Client(readTimeoutDelay, writeTimeoutDelay, defaultTargetReplica, Optional.empty()));
-    }
-
-    // Props method for automated tests
-    public static Props propsWithListener(long readTimeoutDelay, long writeTimeoutDelay, Optional<ActorRef> defaultTargetReplica, ActorRef listener) {
-        return Props.create(Client.class, () -> new Client(readTimeoutDelay, writeTimeoutDelay, defaultTargetReplica, Optional.ofNullable(listener)));
     }
 
     // =============================
@@ -71,34 +71,14 @@ public class Client extends AbstractClient {
     @Override
     public final Receive createReceive() {
         return createBaseReceiveBuilder()
-                // onWriteRequest already matched by the abstract class
-//                .match(AbstractClient.ReadResult.class,   this::onReadResult)
                 .match(Replica.ClientACK.class,  this::onResult)
                 .match(AbstractClient.WriteTimeout.class, this::onWriteTimeOut)
                 .match(AbstractClient.ReadTimeout.class,  this::onReadTimeOut)
-                // TODO add your message handlers here .match(, )
                 .build();
     }
-
-//    private void onReadResult(AbstractClient.ReadResult msg) {
-//
-//        key = msg
-//        if ( timeout != null) {
-//            timeout.cancel();
-//        }
-//        callbackOnReadResult(msg);
-//    }
-//
-//    private void onWriteResult(AbstractClient.WriteResult msg) {
-//        Cancellable timeout = this.sendWriteRequestTimeouts.poll();
-//        if ( timeout != null) {
-//            timeout.cancel();
-//        }
-//        callbackOnWriteResult(msg);
-//    }
     private void onResult(Replica.ClientACK msg) {
         String key = msg.actorRef.path().name();
-//        Cancellable timeout;
+        // Cancellable timeout;
         if (msg.msg instanceof WriteResult) {
             callbackOnWriteResult((WriteResult) msg.msg);
             this.sendWriteRequestTimeouts.get(key).remove().cancel();
