@@ -1066,25 +1066,7 @@ public class Replica extends AbstractReplica {
                 this.pendingWrites.remove(pendingWrite.get());
             }
         }
-//        for (UpdateClock updateClock : msg.updateClocks) {
-//            if (this.updateClock.compareTo(updateClock) > 0 ) {
-//                continue;
-//            }
-//            AbstractClient.WriteRequest writeRequest = msg.missingHistory.get(updateClock);
-//            this.positions[writeRequest.index] = writeRequest.value;
-//            this.history.put(updateClock.clone(),new AbstractClient.WriteRequest(writeRequest.index,writeRequest.value,writeRequest.replica));
-//            this.updateClock.syncClock(updateClock);
-//            // ACK the client
-//            Optional<ClientWrite> pendingWrite = this.pendingWrites.stream()
-//                    .filter(p -> (p.writeRequest.index == writeRequest.index && p.writeRequest.value == writeRequest.value))
-//                    .findFirst();
-//            if (pendingWrite.isPresent()) {
-//                pendingWrite.get().clientRef.tell(
-//                        new Replica.ClientACK(this.getSelf(), new AbstractClient.WriteResult(true, writeRequest.index, writeRequest.value, this.id)),
-//                        this.getSelf());
-//                this.pendingWrites.remove(pendingWrite.get());
-//            }
-//        }
+        this.waitingForWriteOkUpdateClock.syncClock(this.updateClock);
         this.cancelAllWriteRequestTimeOut();
         getContext().become(createReceive());
         debug("HEY! "+this.coordinatorID);
@@ -1112,10 +1094,7 @@ public class Replica extends AbstractReplica {
                         this.getSelf());
                 this.pendingWrites.remove(pendingWrite.get());
                 // TODO: THIS ARE duplicated LINES. CONVERT IN A FUNCTION?????
-            } else {
-                // TODO: SEND ACK TO CLIENT EVEN IF YOU ARE NOT THE ONE THAT RECEIVE THE MESSAGE, use the writeRequest.replica in some way
             }
-
         }
         cancelAllUpdateRequestTimeOut();
         this.waitingForWriteOK.clear();
