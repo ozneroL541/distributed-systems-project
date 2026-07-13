@@ -756,6 +756,8 @@ public class Replica extends AbstractReplica {
         if (this.isCoordinator()) {
             this.onBecameCoordinator();
         }
+        // Reset heartbeat timeout since a new coordinator has been elected
+        this.coordinatorHeartbeatTimeout = setTimeout(TIMEOUT_DELAY * this.replicas.size(), new TimeOut(TimeOut.TimeoutType.Heartbeat));
     }
     /**
      * Update the coordinator ID and handle the event when a new coordinator is elected.
