@@ -55,6 +55,8 @@ public class Replica extends AbstractReplica {
     private final HashMap<UpdateClock, Cancellable> updateRequestTimeouts = new HashMap<>();
     /** Cancellable for timeout on the coordinator heartbeat */
     private Cancellable coordinatorHeartbeatTimeout = null;
+    /** Store the Sync message if you are still in an election and don't know the new leader */
+    private Synchronization syncMessage = null;
     // ________________________________
     // Coordinator specific variables
     // ________________________________
@@ -125,12 +127,14 @@ public class Replica extends AbstractReplica {
 
     private boolean checkIfTimeToCrash(Crash.Type type) {
         if (this.scheduled_crash_type == type) {
-            if (this.scheduled_crash_countdown == 0) {
+            this.scheduled_crash_countdown-=1;
+            if (this.scheduled_crash_countdown <= 0) {
                 crash(new Crash(Crash.Type.Now, 0));
                 return true;
-            } else {
-                this.scheduled_crash_countdown-=1;
             }
+//            else {
+//                this.scheduled_crash_countdown-=1;
+//            }
         }
         return false;
     }
@@ -787,6 +791,9 @@ public class Replica extends AbstractReplica {
             return;
         }
         this.sendToNextReplica(msg);
+        if (this.syncMessage != null) {
+            this.onSyncMessage(this.syncMessage);
+        }
     }
     /**
      * Send an acknowledgment message to the sender of an election message.
@@ -945,7 +952,7 @@ public class Replica extends AbstractReplica {
     private void startElection() {
         debug("ELECTION STARTED!!!!");
 //        ElectionMessage electionMessage = new ElectionMessage(this.id, this.updateClock);
-        Election election = new Election(this.id, this.updateClock);
+        Election election = new Election(this.id, this.waitingForWriteOkUpdateClock.clone());
         if (this.isElectionInProgress() && this.electionInProgress <= this.id) {
             // An election is already in progress
             return;
@@ -1025,6 +1032,10 @@ public class Replica extends AbstractReplica {
 
 
     private void onSyncMessage(Synchronization msg) {
+        if (this.isElectionInProgress()) {
+            this.syncMessage = msg;
+            return;
+        }
 //        for (UpdateClock updateClock : msg.missingUpdate.keySet()) {
 //            if (this.updateClock.compareTo(updateClock) > 0 ) {
 //                continue;
@@ -1062,6 +1073,7 @@ public class Replica extends AbstractReplica {
                     .add(setTimeout(this.getMaxLatencyPlusTolerance(), new TimeOut(TimeOut.TimeoutType.WriteRequest)));
             // TODO how much time to wait for coordinator?
         }
+        this.syncMessage = null;
     }
 
     private void updateHistory() {
