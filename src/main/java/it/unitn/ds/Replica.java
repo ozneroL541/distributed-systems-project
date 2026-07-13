@@ -1005,7 +1005,8 @@ public class Replica extends AbstractReplica {
      * Send a heartbeat message to all replicas.
      */
     private void sendHeartbeat() {
-        this.multicast(new CoordinatorHeartbeat(this.id), Crash.Type.Now); // TODO: SHOULD CRASH?
+        this.multicast(new CoordinatorHeartbeat(this.id), Crash.Type.Now);
+        // TODO: SHOULD CRASH?
     }
     /**
      * Check if this replica is the coordinator.
@@ -1077,7 +1078,8 @@ public class Replica extends AbstractReplica {
                 pendingWrite.get().clientRef.tell(
                         new Replica.ClientACK(this.getSelf(), new AbstractClient.WriteResult(true, writeRequest.index, writeRequest.value, this.id)),
                         this.getSelf());
-                this.pendingWrites.remove(pendingWrite.get()); // TODO: THIS ARE duplicated LINES. CONVERT IN A FUNCTION?????
+                this.pendingWrites.remove(pendingWrite.get());
+                // TODO: THIS ARE duplicated LINES. CONVERT IN A FUNCTION?????
             } else {
                 // TODO: SEND ACK TO CLIENT EVEN IF YOU ARE NOT THE ONE THAT RECEIVE THE MESSAGE, use the writeRequest.replica in some way
             }
