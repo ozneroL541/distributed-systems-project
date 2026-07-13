@@ -232,6 +232,9 @@ public class Replica extends AbstractReplica {
                         return;
                     }
                 }
+                default -> {
+                    // No crash
+                }
             }
 
         }
@@ -732,7 +735,9 @@ public class Replica extends AbstractReplica {
      * @param newCoordinatorId the ID of the new coordinator
      */
     private void newCoordinator(int newCoordinatorId) {
+        // Update the coordinator ID
         this.coordinatorID = newCoordinatorId;
+        // Handle the event when a new coordinator is elected
         this.onNewCoordinator();
     }
     /**
