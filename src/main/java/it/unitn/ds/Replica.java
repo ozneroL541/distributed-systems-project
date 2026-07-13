@@ -1058,6 +1058,7 @@ public class Replica extends AbstractReplica {
                 this.pendingWrites.remove(pendingWrite.get());
             }
         }
+        this.waitingForWriteOkUpdateClock.syncClock(this.updateClock);
         this.cancelAllWriteRequestTimeOut();
         getContext().become(createReceive());
         debug("HEY! "+this.coordinatorID);
