@@ -113,7 +113,7 @@ public class Replica extends AbstractReplica {
 
     @Override
     public void crash(AbstractReplica.Crash how_to_crash) {
-        if (how_to_crash.type == Crash.Type.Now || how_to_crash.after_n_messages_of_type == 0 ) {
+        if (how_to_crash.type == Crash.Type.Now || how_to_crash.after_n_messages_of_type == 0) {
             log("Replica crashed");
             getContext().become(crashed());
         } else {
@@ -790,6 +790,8 @@ public class Replica extends AbstractReplica {
             if (bestCandidate != null) {
                 this.replicas = msg.getMsg().deleteCrashedNodesFromList(this.replicas);
                 /** Coordinator elected message */
+                // TEST
+                this.newCoordinator(bestCandidate);
                 ElectionOver coordinatorElected = new ElectionOver(
                         this.id, 
                         new ElectionChooseCoordinator(
@@ -1009,6 +1011,25 @@ public class Replica extends AbstractReplica {
             this.positions[writeRequest.index] = writeRequest.value;
             this.history.put(updateClock.clone(),new AbstractClient.WriteRequest(writeRequest.index,writeRequest.value,writeRequest.replica));
             this.updateClock.syncClock(updateClock);
+            // ACK the client
+            Optional<ClientWrite> pendingWrite = this.pendingWrites.stream()
+                    .filter(p -> (p.writeRequest.index == writeRequest.index && p.writeRequest.value == writeRequest.value))
+                    .findFirst();
+            if (pendingWrite.isPresent()) {
+                pendingWrite.get().clientRef.tell(
+                        new Replica.ClientACK(this.getSelf(), new AbstractClient.WriteResult(true, writeRequest.index, writeRequest.value, this.id)),
+                        this.getSelf());
+                this.pendingWrites.remove(pendingWrite.get());
+            }
+        }
+        this.cancelAllWriteRequestTimeOut();
+        getContext().become(createReceive());
+        debug("HEY! "+this.coordinatorID);
+        for (Replica.ClientWrite w : this.pendingWrites) {
+            replicas.get(this.coordinatorID).tell(w.writeRequest, this.getSelf());
+            this.writeRequestTimeouts.computeIfAbsent(w.writeRequest, k -> new ArrayDeque<>())
+                    .add(setTimeout(this.getMaxLatencyPlusTolerance(), new TimeOut(TimeOut.TimeoutType.WriteRequest)));
+            // TODO how much time to wait for coordinator?
         }
     }
 
@@ -1041,6 +1062,15 @@ public class Replica extends AbstractReplica {
             timeout.cancel();
         }
         this.updateRequestTimeouts.clear();
+
+    }
+    private void cancelAllWriteRequestTimeOut() {
+        for (Queue<Cancellable> timeout : this.writeRequestTimeouts.values()) {
+            for (Cancellable t : timeout) {
+                t.cancel();
+            }
+        }
+        this.writeRequestTimeouts.clear();
 
     }
 }
