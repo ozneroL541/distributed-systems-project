@@ -59,6 +59,10 @@ public class Replica extends AbstractReplica {
     private Cancellable coordinatorHeartbeatTimeout = null;
     /** Store the Sync message if you are still in an election and don't know the new leader */
     private Synchronization syncMessage = null;
+    /** Store the UpdateRequest messages if you are still in an election and don't know the new leader */
+    private Queue<UpdateRequest> updateRequestQueue = new ArrayDeque<>();
+    /** Store the WriteOK messages if you are still in an election and don't know the new leader */
+    private Queue<WriteOK> writeOKQueue = new ArrayDeque<>();
     // ________________________________
     // Coordinator specific variables
     // ________________________________
@@ -180,6 +184,8 @@ public class Replica extends AbstractReplica {
                 .match(ElectionAck.class,                 this::onElectionAck)
                 .match(Synchronization.class,             this::onSyncMessage)
                 .match(CoordinatorHeartbeat.class,        this::onHeartbeat)
+                .match(Replica.UpdateRequest.class,       u -> this.updateRequestQueue.add(u))
+                .match(Replica.WriteOK.class,       wOK -> this.writeOKQueue.add(wOK))
                 .build();
     }
 
@@ -1069,6 +1075,14 @@ public class Replica extends AbstractReplica {
         this.waitingForWriteOkUpdateClock.syncClock(this.updateClock);
         this.cancelAllWriteRequestTimeOut();
         getContext().become(createReceive());
+        while (!this.updateRequestQueue.isEmpty()) {
+            UpdateRequest m = this.updateRequestQueue.remove();
+            this.onUpdateRequest(m);
+        }
+        while (!this.writeOKQueue.isEmpty()) {
+            WriteOK m = this.writeOKQueue.remove();
+            this.onWriteOK(m);
+        }
         debug("HEY! "+this.coordinatorID);
         for (Replica.ClientWrite w : this.pendingWrites) {
             replicas.get(this.coordinatorID).tell(w.writeRequest, this.getSelf());

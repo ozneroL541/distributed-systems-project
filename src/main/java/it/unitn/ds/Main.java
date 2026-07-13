@@ -10,7 +10,7 @@ import it.unitn.ds.AbstractReplica.InitSystem;
 
 public class Main {
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
         System.out.println("========================================");
         System.out.println("START");
         System.out.println("========================================\n");
@@ -22,23 +22,74 @@ public class Main {
         Logger.setDestinationStdout();
         Logger.setDebugEnabled(true);
 
+        verifyTotalOrderOnCoordinatorCrash();
+
+        System.out.println("\n========================================");
+        System.out.println("END");
+        System.out.println("========================================\n");
+        system.terminate();
+    }
+
+    private static void verifyTotalOrderOnCoordinatorCrash() throws InterruptedException {
+        System.out.println("========================================");
+        System.out.println("Verify total order on coordinator crash");
+        System.out.println("========================================\n");
+        Logger.setDestinationStdout();
+        Logger.setDebugEnabled(true);
+        final int N_REPLICAS = 21;
+        final int COORDINATOR_ID = 8;
+        final int N_CLIENT = 10;
+        final ActorSystem system = ActorSystem.create("verifyTotalOrderOnCoordinatorCrash");
+
+        Map<Integer, ActorRef> replica = createReplica(system, N_REPLICAS, COORDINATOR_ID);
+        Map<Integer, ActorRef> clients = createClients(system, N_CLIENT);
+
+        replica.get(8).tell(new AbstractReplica.Crash(AbstractReplica.Crash.Type.Update, 5), ActorRef.noSender());
+        Thread.sleep(100);
+        clients.get(0).tell(new AbstractClient.WriteRequest(8, 88, replica.get(7)), ActorRef.noSender());
+        clients.get(1).tell(new AbstractClient.WriteRequest(7, 77, replica.get(4)), ActorRef.noSender());
+        clients.get(2).tell(new AbstractClient.WriteRequest(2, 22, replica.get(1)), ActorRef.noSender());
+        clients.get(3).tell(new AbstractClient.WriteRequest(12, 12, replica.get(11)), ActorRef.noSender());
+        clients.get(4).tell(new AbstractClient.WriteRequest(13, 12, replica.get(11)), ActorRef.noSender());
+        Thread.sleep(1000);
+        for (int i = 0; i < 4; i++) {
+            clients.get(0).tell(new AbstractClient.ReadRequest(8, replica.get(18)), ActorRef.noSender());
+            clients.get(1).tell(new AbstractClient.ReadRequest(7, replica.get(18)), ActorRef.noSender());
+            clients.get(2).tell(new AbstractClient.ReadRequest(2, replica.get(18)), ActorRef.noSender());
+            clients.get(3).tell(new AbstractClient.ReadRequest(12, replica.get(18)), ActorRef.noSender());
+            clients.get(4).tell(new AbstractClient.ReadRequest(13, replica.get(18)), ActorRef.noSender());
+            i++;
+        }
+
+        Thread.sleep(1000);
+
+        system.terminate();
+
+
+
+
+
+
+    }
+
+    private static Map<Integer, ActorRef> createReplica(ActorSystem system, int N_REPLICAS, int COORDINATOR_ID) {
         Map<Integer, ActorRef> replicas = new HashMap<>(N_REPLICAS);
         for (int i = 0; i < N_REPLICAS; i++) {
             replicas.put(i,
-                system.actorOf(
-                    Replica.props(i, AbstractReplica.MIN_LATENCY, AbstractReplica.MAX_LATENCY, AbstractReplica.COORDINATOR_BEAT_INTERVAL),
-                    "Replica_" + i
-                )
+                    system.actorOf(
+                            Replica.props(i, AbstractReplica.MIN_LATENCY, AbstractReplica.MAX_LATENCY, AbstractReplica.COORDINATOR_BEAT_INTERVAL),
+                            "Replica_" + i
+                    )
             );
         }
-
         InitSystem initMsg = new InitSystem(replicas, COORDINATOR_ID);
         for (Map.Entry<Integer, ActorRef> entry : replicas.entrySet()) {
             entry.getValue().tell(initMsg, ActorRef.noSender());
         }
+        return replicas;
+    }
 
-        // TODO: Create your clients
-        final int N_CLIENT = 2;
+    private static Map<Integer, ActorRef> createClients(ActorSystem system, int N_CLIENT) {
         Map<Integer, ActorRef> clients = new HashMap<>(N_CLIENT);
         for (int i = 0; i < N_CLIENT; i++) {
             Optional<ActorRef> defaultTargetReplica = Optional.empty();
@@ -47,51 +98,7 @@ public class Main {
                             Client.props(2000, 2000, defaultTargetReplica),
                             "Client_" + i));
         }
-
-//        InitSystem clientInitMsg = new InitSystem(replicas, COORDINATOR_ID);
-//        for (Map.Entry<Integer, ActorRef> entry : clients.entrySet()) {
-//            entry.getValue().tell(initMsg, ActorRef.noSender());
-//        }
-        // TODO: Implement your main logic
-        clients.get(0).tell(new AbstractClient.WriteRequest(3,56,replicas.get(0)), ActorRef.noSender());
-        replicas.get(0).tell(new AbstractReplica.Crash(AbstractReplica.Crash.Type.WriteOK, 1), ActorRef.noSender());
-        try {
-            // Wait for 10 seconds to let the system run
-            Thread.sleep(1000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        clients.get(1).tell(new AbstractClient.WriteRequest(2,99,replicas.get(5)), ActorRef.noSender());
-        try {
-            // Wait for 10 seconds to let the system run
-            Thread.sleep(3000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        for (Map.Entry<Integer, ActorRef> entry : replicas.entrySet()) {
-            entry.getValue().tell(new AbstractReplica.Crash(AbstractReplica.Crash.Type.Now,0), ActorRef.noSender());
-        }
-//        clients.get(1).tell(new AbstractClient.ReadRequest(3,replicas.get(2)), Actor.noSender());
-//        replicas.get(0).tell(new AbstractReplica.Crash(AbstractReplica.Crash.Type.Now, 0), Actor.noSender());
-        try {
-            // Wait for 10 seconds to let the system run
-            Thread.sleep(10000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-
-        system.terminate();
-
-        System.out.println("\n========================================");
-        System.out.println("END");
-        System.out.println("========================================\n");
-        System.out.println("PELSE");
-//        System.out.println(new Client.HashMessage(new AbstractClient.ReadRequest(3)).hashCode());
-//        System.out.println(new Client.HashMessage(new AbstractClient.ReadRequest(3)).hashCode());
-//        HashMap<Client.HashMessage, Integer> hashMessageIntegerHashMap = new HashMap<>();
-//        hashMessageIntegerHashMap.put(new Client.HashMessage(new AbstractClient.ReadRequest(3)), 12);
-//        System.out.println(hashMessageIntegerHashMap.get(new Client.HashMessage(new AbstractClient.ReadRequest(3))));
-
+        return clients;
     }
 
 
