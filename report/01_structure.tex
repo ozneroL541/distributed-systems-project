@@ -5,5 +5,8 @@
 \subsection{Code Structure}
 % TODO @ozneroL541
 \subsection{Our Assumptions}
+
+Assumiamo che in caso la replica che ha ricevuto un messaggio di scrittura da un client crashi, la scrittura andrà in timeout per il client ma verrà comunque eseguita dal coordinatore e dalle altre repliche dopo l'elezione di un nuovo coordinatore. 
+Assumiamo che il coordinatore neo eletto non possa crashare durante il sync message.
 % TODO @@AleCornella
 % TODO @ozneroL541

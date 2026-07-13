@@ -14,8 +14,11 @@ Once a replica receives the \texttt{WriteOK} message, it executes the write oper
 After the write is successfully applied, the replica updates its write history. This history is maintained via a HashMap that associates each identifier with its corresponding \texttt{WriteRequest} message.
 Finally, the replica removes the newly executed write from the local HashMap used while handling the \texttt{UpdateMessage}. If the write was also present in the pending writes queue, then the replica sends a \texttt{WriteResult} message to the originating client.
 \subsection{Crash Detection}
+How do you manage timeouts?
+How do you control crashes?
 % TODO @ozneroL541
 \subsection{Election Protocol}
+How do you ensure election does not block forever?
 % TODO @ozneroL541
 \subsection{Synchronization Protocol}
 % TODO @AleCornella
