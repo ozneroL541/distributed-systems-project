@@ -49,9 +49,6 @@ public class Client extends AbstractClient {
                 new AbstractClient.ReadTimeout(this.getSelf(),replica,index),
                 getContext().system().dispatcher(), getSelf()
         ));
-//        this.sendReadRequestTimeouts.add(setTimeout(this.getReadTimeoutDelay(),new TimeOut(TimeOut.TimeoutType.SendRead))); // TODO how much time to wait for coordinator?
-
-        // TODO: implement
     }
 
     @Override
@@ -65,7 +62,6 @@ public class Client extends AbstractClient {
                 new AbstractClient.WriteTimeout(this.getSelf(),replica,index, value),
                 getContext().system().dispatcher(), getSelf()
         ));
-        // TODO: implement
     }
 
     @Override
@@ -112,5 +108,4 @@ public class Client extends AbstractClient {
             this.sendReadRequestTimeouts.remove(key);
         }
     }
-
 }
