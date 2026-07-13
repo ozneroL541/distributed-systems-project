@@ -3,8 +3,10 @@ package it.unitn.ds;
 import akka.actor.ActorRef;
 import akka.actor.Cancellable;
 import akka.actor.Props;
+import it.unitn.ds.AbstractClient.WriteRequest;
 import it.unitn.ds.TimeOut.TimeoutType;
 import scala.concurrent.duration.Duration;
+import scala.math.Ordered;
 
 import java.io.Serializable;
 import java.util.*;
@@ -64,8 +66,6 @@ public class Replica extends AbstractReplica {
     private final Map<UpdateClock, Integer> UpdateACKCounter = new HashMap<>();
     /** The update clock for the next message to be sent */
     private final UpdateClock nextMessageClock;
-    /** The lower update clock from all the replica, used to send all the missing update */
-    private final UpdateClock worstClock;
     /** How long to wait for a timeout */
     private final long TIMEOUT_DELAY = this.getMaxLatencyPlusTolerance();
     /** 
@@ -96,7 +96,6 @@ public class Replica extends AbstractReplica {
         this.updateClock = new UpdateClock();
         this.nextMessageClock = new UpdateClock();
         this.waitingForWriteOkUpdateClock = new UpdateClock();
-        this.worstClock = new UpdateClock();
     }
 
     public static Props props(int id, int minLatency, int maxLatency, int coordinatorBeatInterval) {
@@ -263,13 +262,22 @@ public class Replica extends AbstractReplica {
     }
 
     public static class Synchronization implements Serializable {
-        final List<UpdateClock> updateClocks;
-        final Map<UpdateClock, AbstractClient.WriteRequest>  missingUpdate;
-
-        public Synchronization(Map<UpdateClock, AbstractClient.WriteRequest> missingUpdate, UpdateClock worstClock) {
-            // keep only the key ordered and above the worstClock
-            this.updateClocks = missingUpdate.keySet().stream().sorted().filter(clk -> clk.compareTo(worstClock) >= 0).toList();
-            this.missingUpdate = missingUpdate;
+        /** The missing history of updates */
+        final Map<UpdateClock, WriteRequest>  missingHistory;
+        /**
+         * Constructor for Synchronization
+         * @param missingHistory the missing history of updates
+         */
+        public Synchronization(Map<UpdateClock, WriteRequest> missingHistory) {
+            this.missingHistory = new TreeMap<>(missingHistory);
+        }
+        /**
+         * Constructor for Synchronization
+         * @param history the whole history of updates
+         * @param worstClock the worst clock value among the replicas
+         */
+        public Synchronization(Map<UpdateClock, WriteRequest> history, UpdateClock worstClock) {
+            this.missingHistory = (Map<UpdateClock, WriteRequest>) Replica.shortHistory(history, worstClock);
         }
     }
 
@@ -729,23 +737,17 @@ public class Replica extends AbstractReplica {
         this.sendHeartbeat();
         // preare the Sync message
         this.updateHistory();
-        // Create a Synchronization message with the current history and worst clock
-        Synchronization syncMessage = new Synchronization(this.history, this.worstClock);
-        // Go to next epoch
-        this.updateClock.incrementE();
-        // Update the next message clock to synchronize with the current update clock
-        this.nextMessageClock.syncClock(this.updateClock);
-        // send the Sync message to all replicas
-        this.multicast(syncMessage, null);
     }
     /**
      * Get the shortened history of updates that are more recent than the given clock.
+     * @param history the history of updates to be shortened
      * @param clock the clock to start from to get the shortened history
-     * @return the history of updates that are more recent than the given clock
+     * @return the sorted history of updates that are more recent than the given clock
      */
-    private Map<UpdateClock, AbstractClient.WriteRequest> getShortnedHistory(UpdateClock clock) {
-        final Map<UpdateClock, AbstractClient.WriteRequest> shortnedHistory = new HashMap<>();
-        for (Map.Entry<UpdateClock, AbstractClient.WriteRequest> entry : this.history.entrySet()) {
+    private static Map<UpdateClock, AbstractClient.WriteRequest> shortHistory(Map<UpdateClock, AbstractClient.WriteRequest> history, UpdateClock clock) {
+        /** The shortened history of updates */
+        final Map<UpdateClock, AbstractClient.WriteRequest> shortnedHistory = new TreeMap<UpdateClock, AbstractClient.WriteRequest>();
+        for (Map.Entry<UpdateClock, AbstractClient.WriteRequest> entry : history.entrySet()) {
             if (entry.getKey().compareTo(clock) > 0) {
                 shortnedHistory.put(entry.getKey(), entry.getValue());
             }
@@ -753,17 +755,32 @@ public class Replica extends AbstractReplica {
         return shortnedHistory;
     }
     /**
+     * Get the shortened history of updates that are more recent than the given clock in order by UpdateClock.
+     * @param clock the clock to start from to get the shortened history
+     * @return the sorted history of updates that are more recent than the given clock
+     */
+    private Map<UpdateClock, AbstractClient.WriteRequest> getShortnedHistory(UpdateClock clock) {
+        return shortHistory(this.history, clock);
+    }
+    /**
      * Handle the event when this replica is elected as the new coordinator by sending a heartbeat and performing any necessary actions.
      * @param worstClock the worst clock value among the replicas
      */
     private void onElectedCoordinator(int newCoordinatorId, UpdateClock worstClock) {
-        if (this.id == newCoordinatorId) {
-            this.worstClock.syncClock(worstClock);
-        }
+        /** The shortened history of updates */
+        final Map<UpdateClock, AbstractClient.WriteRequest> shortnedHistory = this.getShortnedHistory(worstClock);
+        // Update the coordinator ID and handle the event when a new coordinator is elected
         this.newCoordinator(newCoordinatorId);
-        // TODO: implement any additional logic needed when this replica becomes the coordinator
+        // If this replica is the new coordinator, create a Synchronization message with the current history and worst clock
         if (this.isCoordinator()) {
-            final Map<UpdateClock, AbstractClient.WriteRequest> shortnedHistory = this.getShortnedHistory(worstClock);
+            // Create a Synchronization message with the current history and worst clock
+            Synchronization syncMessage = new Synchronization(shortnedHistory);
+            // Go to next epoch
+            this.updateClock.incrementE();
+            // Update the next message clock to synchronize with the current update clock
+            this.nextMessageClock.syncClock(this.updateClock);
+            // send the Sync message to all replicas
+            this.multicast(syncMessage, null);
         }
     }
     /**
@@ -1030,20 +1047,11 @@ public class Replica extends AbstractReplica {
             this.syncMessage = msg;
             return;
         }
-//        for (UpdateClock updateClock : msg.missingUpdate.keySet()) {
-//            if (this.updateClock.compareTo(updateClock) > 0 ) {
-//                continue;
-//            }
-//            AbstractClient.WriteRequest writeRequest = msg.missingUpdate.get(updateClock);
-//            this.positions[writeRequest.index] = writeRequest.value;
-//            this.history.put(updateClock.clone(),new AbstractClient.WriteRequest(writeRequest.index,writeRequest.value,writeRequest.replica));
-//            this.updateClock.syncClock(updateClock);
-//        }
-        for (UpdateClock updateClock : msg.updateClocks) {
+        for (UpdateClock updateClock : msg.missingHistory.keySet()) {
             if (this.updateClock.compareTo(updateClock) > 0 ) {
                 continue;
             }
-            AbstractClient.WriteRequest writeRequest = msg.missingUpdate.get(updateClock);
+            AbstractClient.WriteRequest writeRequest = msg.missingHistory.get(updateClock);
             this.positions[writeRequest.index] = writeRequest.value;
             this.history.put(updateClock.clone(),new AbstractClient.WriteRequest(writeRequest.index,writeRequest.value,writeRequest.replica));
             this.updateClock.syncClock(updateClock);
@@ -1058,6 +1066,25 @@ public class Replica extends AbstractReplica {
                 this.pendingWrites.remove(pendingWrite.get());
             }
         }
+//        for (UpdateClock updateClock : msg.updateClocks) {
+//            if (this.updateClock.compareTo(updateClock) > 0 ) {
+//                continue;
+//            }
+//            AbstractClient.WriteRequest writeRequest = msg.missingHistory.get(updateClock);
+//            this.positions[writeRequest.index] = writeRequest.value;
+//            this.history.put(updateClock.clone(),new AbstractClient.WriteRequest(writeRequest.index,writeRequest.value,writeRequest.replica));
+//            this.updateClock.syncClock(updateClock);
+//            // ACK the client
+//            Optional<ClientWrite> pendingWrite = this.pendingWrites.stream()
+//                    .filter(p -> (p.writeRequest.index == writeRequest.index && p.writeRequest.value == writeRequest.value))
+//                    .findFirst();
+//            if (pendingWrite.isPresent()) {
+//                pendingWrite.get().clientRef.tell(
+//                        new Replica.ClientACK(this.getSelf(), new AbstractClient.WriteResult(true, writeRequest.index, writeRequest.value, this.id)),
+//                        this.getSelf());
+//                this.pendingWrites.remove(pendingWrite.get());
+//            }
+//        }
         this.cancelAllWriteRequestTimeOut();
         getContext().become(createReceive());
         debug("HEY! "+this.coordinatorID);
