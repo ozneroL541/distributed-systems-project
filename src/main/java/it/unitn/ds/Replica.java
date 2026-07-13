@@ -276,7 +276,7 @@ public class Replica extends AbstractReplica {
         final Map<UpdateClock, AbstractClient.WriteRequest>  missingUpdate;
 
         public Synchronization(Map<UpdateClock, AbstractClient.WriteRequest> missingUpdate, UpdateClock worstClock) {
-            // keep only the key orderd and above the worstClock
+            // keep only the key ordered and above the worstClock
             this.updateClocks = missingUpdate.keySet().stream().sorted().filter(clk -> clk.compareTo(worstClock) >= 0).toList();
             this.missingUpdate = missingUpdate;
         }
@@ -823,8 +823,6 @@ public class Replica extends AbstractReplica {
             if (bestCandidate != null) {
                 this.replicas = msg.getMsg().deleteCrashedNodesFromList(this.replicas);
                 /** Coordinator elected message */
-                // TEST
-                this.newCoordinator(bestCandidate);
                 ElectionOver coordinatorElected = new ElectionOver(
                         this.id, 
                         new ElectionChooseCoordinator(
