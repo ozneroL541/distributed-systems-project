@@ -1065,8 +1065,7 @@ public class Replica extends AbstractReplica {
         for (Replica.ClientWrite w : this.pendingWrites) {
             replicas.get(this.coordinatorID).tell(w.writeRequest, this.getSelf());
             this.writeRequestTimeouts.computeIfAbsent(w.writeRequest, k -> new ArrayDeque<>())
-                    .add(setTimeout(this.getMaxLatencyPlusTolerance(), new TimeOut(TimeOut.TimeoutType.WriteRequest)));
-            // TODO how much time to wait for coordinator?
+                    .add(setTimeout(this.TIMEOUT_DELAY, new TimeOut(TimeOut.TimeoutType.WriteRequest)));
         }
         this.syncMessage = null;
     }
