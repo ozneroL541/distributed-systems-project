@@ -1059,10 +1059,6 @@ public class Replica extends AbstractReplica {
      * @return the retrieved write request
      */
     private AbstractClient.WriteRequest retrieveWriteRequest(Synchronization msg, UpdateClock updateClock) {
-        // TODO: Remove when safe
-        if (msg == null || updateClock == null || msg.missingHistory == null || msg.missingHistory.isEmpty()) {
-            return null;
-        }
         AbstractClient.WriteRequest writeRequest = msg.missingHistory.get(updateClock);
         this.positions[writeRequest.index] = writeRequest.value;
         this.history.put(updateClock.clone(),new AbstractClient.WriteRequest(writeRequest.index,writeRequest.value,writeRequest.replica));
