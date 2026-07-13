@@ -364,6 +364,9 @@ public class Replica extends AbstractReplica {
      * @return the sorted history of updates that are more recent than the given clock
      */
     private static Map<UpdateClock, AbstractClient.WriteRequest> shortHistory(Map<UpdateClock, AbstractClient.WriteRequest> history, UpdateClock clock) {
+        if (history == null || history.isEmpty()) {
+            return history;
+        }
         /** The shortened history of updates */
         final Map<UpdateClock, AbstractClient.WriteRequest> shortnedHistory = new TreeMap<UpdateClock, AbstractClient.WriteRequest>();
         for (Map.Entry<UpdateClock, AbstractClient.WriteRequest> entry : history.entrySet()) {
@@ -1033,12 +1036,26 @@ public class Replica extends AbstractReplica {
         }
         this.syncMessage = null;
     }
+    /**
+     * Retrieve a write request from the synchronization message and update the replica's state accordingly.
+     * @param msg the synchronization message containing the missing history
+     * @param updateClock the update clock associated with the write request to retrieve
+     * @return the retrieved write request
+     */
     private AbstractClient.WriteRequest retrieveWriteRequest(Synchronization msg, UpdateClock updateClock) {
+        // TODO: Remove when safe
+        if (msg == null || updateClock == null || msg.missingHistory == null || msg.missingHistory.isEmpty()) {
+            return null;
+        }
         AbstractClient.WriteRequest writeRequest = msg.missingHistory.get(updateClock);
         this.positions[writeRequest.index] = writeRequest.value;
         this.history.put(updateClock.clone(),new AbstractClient.WriteRequest(writeRequest.index,writeRequest.value,writeRequest.replica));
         return writeRequest;
     }
+    /**
+     * Check if there is a pending write request that matches the given write request and send an acknowledgment to the client if found.
+     * @param writeRequest the write request to check for pending writes
+     */
     private void getPendingWrite(AbstractClient.WriteRequest writeRequest) {
         Optional<ClientWrite> pendingWrite = this.pendingWrites.stream()
                 .filter(p -> (p.writeRequest.index == writeRequest.index && p.writeRequest.value == writeRequest.value))
