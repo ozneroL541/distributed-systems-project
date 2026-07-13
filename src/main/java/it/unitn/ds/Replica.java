@@ -696,6 +696,11 @@ public class Replica extends AbstractReplica {
         }
         // TODO: Change receiver
         getContext().become(createElectionReceive());
+        // Delete heartbeat timeout if it exists
+        if (this.coordinatorHeartbeatTimeout != null) {
+            this.coordinatorHeartbeatTimeout.cancel();
+            this.coordinatorHeartbeatTimeout = null;
+        }
     }
     /**
      * Handle the event when a new coordinator is elected.
@@ -703,6 +708,7 @@ public class Replica extends AbstractReplica {
     private void onNewCoordinator() {
         this.callbackOnCoordinatorElected(this.coordinatorID);
         // TODO: Change receiver
+        getContext().become(createReceive());
     }
     /**
      * Update the coordinator ID and handle the event when a new coordinator is elected.
@@ -1014,6 +1020,5 @@ public class Replica extends AbstractReplica {
             this.history.put(updateClock.clone(),new AbstractClient.WriteRequest(writeRequest.index,writeRequest.value,writeRequest.replica));
             this.updateClock.syncClock(updateClock);
         }
-        getContext().become(createReceive());
     }
 }
