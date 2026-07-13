@@ -1084,11 +1084,23 @@ public class Replica extends AbstractReplica {
         }
     }
 
-    private void updateHistory() {
+ private void updateHistory() {
         List<UpdateClock> ordered_clock = this.waitingForWriteOK.keySet().stream().sorted().toList();
         for (UpdateClock clk : ordered_clock) {
-            AbstractClient.WriteRequest writeRequest = this.retrieveWriteRequest(syncMessage, clk);
-            getPendingWrite(writeRequest);
+            AbstractClient.WriteRequest writeRequest = this.waitingForWriteOK.get(clk);
+            this.positions[writeRequest.index] = writeRequest.value;
+            this.history.put(clk.clone(), new AbstractClient.WriteRequest(writeRequest.index, writeRequest.value, writeRequest.replica));
+            // ACK the client
+            Optional<ClientWrite> pendingWrite = this.pendingWrites.stream()
+                    .filter(p -> (p.writeRequest.index == writeRequest.index && p.writeRequest.value == writeRequest.value))
+                    .findFirst();
+            if (pendingWrite.isPresent()) {
+                pendingWrite.get().clientRef.tell(
+                        new Replica.ClientACK(this.getSelf(), new AbstractClient.WriteResult(true, writeRequest.index, writeRequest.value, this.id)),
+                        this.getSelf());
+                this.pendingWrites.remove(pendingWrite.get());
+                // TODO: THIS ARE duplicated LINES. CONVERT IN A FUNCTION?????
+            }
         }
         cancelAllUpdateRequestTimeOut();
         this.waitingForWriteOK.clear();
