@@ -226,7 +226,9 @@ public class Replica extends AbstractReplica {
                         return;
                     }
                 }
-                default -> throw new IllegalArgumentException("Unexpected value: " + crash_type);
+                default -> {
+                    // do nothing
+                }
             }
 
         }
