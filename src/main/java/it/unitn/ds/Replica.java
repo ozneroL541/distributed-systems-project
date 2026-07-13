@@ -764,6 +764,10 @@ public class Replica extends AbstractReplica {
      * @param newCoordinatorId the ID of the new coordinator
      */
     private void newCoordinator(int newCoordinatorId) {
+        // If the new coordinator ID is the same as the current coordinator ID, do nothing
+        if (this.coordinatorID == newCoordinatorId) {
+            return;
+        }
         // Update the coordinator ID
         this.coordinatorID = newCoordinatorId;
         // Handle the event when a new coordinator is elected
@@ -855,7 +859,6 @@ public class Replica extends AbstractReplica {
     private void onElectionMessage(Election msg) {
         debug("Recived electionMSG:" + msg.toString()+"|"+msg.msg.toString()+"|"+" from: "+getSender().path().name());
         if (msg.getMsg().isElectionOver(electionInProgress)) {
-            this.electionInProgress = null;
             /** Best candidate for coordinator */
             Integer bestCandidate = msg.getMsg().getBestCandidate();
             if (bestCandidate != null) {
@@ -869,6 +872,7 @@ public class Replica extends AbstractReplica {
                             )
                     );
                 this.sendToNextReplica(coordinatorElected);
+                this.newCoordinator(bestCandidate);
             }
         } else if (!this.isElectionInProgress() || msg.getMsg().electionStarter < this.electionInProgress) {
             log("I'm not ignoring this message");
