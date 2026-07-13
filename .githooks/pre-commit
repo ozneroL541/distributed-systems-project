@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+run_test() {
+    test_class=$1
+    printf 'Running %s...\n' "$test_class"
+    ./gradlew --no-daemon --console=plain test --tests "$test_class"
+}
+
+run_test it.unitn.ds.base.APICompliance
+run_test it.unitn.ds.base.NoCrashes
+run_test it.unitn.ds.base.WithCrashes
