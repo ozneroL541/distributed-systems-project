@@ -776,7 +776,6 @@ public class Replica extends AbstractReplica {
      */
     private void onElectionOver(ElectionOver msg) {
         debug("ELECTION IS OVER, I RECEIVE " + msg.toString());
-        this.newCoordinator(msg.getMsg().coordinatorElected.newCoordinatorId);
         // Ackowledge the receipt of the coordinator elected message to the sender
         this.onElectedCoordinator(msg.getMsg().coordinatorElected.newCoordinatorId, msg.getMsg().worstClock);
         this.sendAckToSender(msg);
