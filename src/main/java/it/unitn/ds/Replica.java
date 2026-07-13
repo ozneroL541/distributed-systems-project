@@ -711,7 +711,7 @@ public class Replica extends AbstractReplica {
                 break;
             case TimeOut.TimeoutType.UpdateRequest:
             case TimeOut.TimeoutType.WriteRequest:
-                debug("SIAMSO CRASHDHAHFHDSHFHDFHDHSAFHHDHFHHFHHFH");
+                debug("CRASH");
                 this.coordinatorCrashed();
                 break;
             case TimeOut.TimeoutType.Heartbeat:
