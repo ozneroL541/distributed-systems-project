@@ -377,7 +377,7 @@ public class Replica extends AbstractReplica {
         /** The shortened history of updates */
         final Map<UpdateClock, AbstractClient.WriteRequest> shortnedHistory = new TreeMap<UpdateClock, AbstractClient.WriteRequest>();
         for (Map.Entry<UpdateClock, AbstractClient.WriteRequest> entry : history.entrySet()) {
-            if (entry.getKey().compareTo(clock) > 0) {
+            if (entry.getKey().compareTo(clock) >= 0) {
                 shortnedHistory.put(entry.getKey(), entry.getValue());
             }
         }
@@ -810,10 +810,12 @@ public class Replica extends AbstractReplica {
      * @param worstClock the worst clock value among the replicas
      */
     private void onElectedCoordinator(int newCoordinatorId, UpdateClock worstClock) {
-        /** The shortened history of updates */
-        final Map<UpdateClock, AbstractClient.WriteRequest> shortnedHistory = this.getShortnedHistory(worstClock);
+//        /** The shortened history of updates */
+//        final Map<UpdateClock, AbstractClient.WriteRequest> shortnedHistory = this.getShortnedHistory(worstClock);
         // Update the coordinator ID and handle the event when a new coordinator is elected
         this.newCoordinator(newCoordinatorId);
+        /** The shortened history of updates */
+        final Map<UpdateClock, AbstractClient.WriteRequest> shortnedHistory = this.getShortnedHistory(worstClock);
         // If this replica is the new coordinator, create a Synchronization message with the current history and worst clock
         if (this.isCoordinator()) {
             // Create a Synchronization message with the current history and worst clock
