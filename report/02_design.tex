@@ -21,7 +21,15 @@ How do you control crashes?
 How do you ensure election does not block forever?
 % TODO @ozneroL541
 \subsection{Synchronization Protocol}
-% TODO @AleCornella
-
-
-
+Once a new coordinator is elected, it must perform a series of operations before restoring the system to the default state.
+First, it will broadcast a \texttt{Heartbeat} message to all replicas in the system. It is crucial that this is one of the coordinator's initial actions to prevent replicas from timing out due to a lack of \texttt{Heartbeat} messages, which would trigger a new, erroneous election.
+Once the initial \texttt{Heartbeat} messages have been dispatched, the coordinator must ensure that all not completed write messages are properly processed. There are two categories of these write messages:
+\begin{itemize}
+    \item Messages that the previous coordinator has already assigned an identifier to.
+    \item Messages received by a replica but never successfully forwarded to the coordinator, meaning they do not yet have an assigned identifier.
+\end{itemize}
+Regarding the first category, given the design of the leader election protocol, the newly elected coordinator is guaranteed to be the replica with the most up-to-date knowledge of these messages. Therefore, it will first put these messages into its own history,
+handling any necessary \texttt{WriteResult} messages to be sent back to the clients. Once the history is updated, it will filter and extract from it all the updates subsequent to the last update executed by the least up-to-date replica, and broadcast these messages via a \texttt{Synchronization} message.
+Upon receiving the \texttt{Synchronization} message, each replica executes all the \texttt{WriteRequest} and updates its own history. Then, they clean their local HashMaps and pending writes queue. If some write messages were present in their pending writes queue, the replica will then forward a \texttt{WriteResult} message to the client that initially issued the request.
+Once the history is fully synchronized, the replica iterates through all \texttt{WriteRequest} messages waiting to be forwarded and sends them to the new coordinator. The coordinator will then assign them a new identifier and process as standard new messages.
+Finally, once all replicas have received the \texttt{Synchronization} message, applied the necessary updates, and forwarded any pending \texttt{WriteRequest} messages, the system officially returns to a normal operational state.
