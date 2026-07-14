@@ -3,7 +3,7 @@
 \subsection{Two-phase Broadcast Protocol}
 The implemented two-phase broadcast protocol allows any client to issue \texttt{WriteRequest} or \texttt{ReadRequest} messages to any replica within the system.
 Upon receiving a request, the replica processes it differently depending on its type. If it is a \texttt{ReadRequest}, the replica immediately replies to the client with the requested value.
-If, instead, it's a \texttt{WriteRequest}, the replica stores the received message in a pending writes queue and forwards the request to the system's coordinator. This queue allows the replica to keep track of uncompleted write operations requested to it directly by a client. 
+If, instead, it's a \texttt{WriteRequest}, the replica stores the received message in a pending writes queue and forwards the request to the system's coordinator. This queue allows the replica to keep track of uncompleted write operations requested directly by a client. 
 Once the write operation is eventually completed, the replica utilizes this queue to forward a \texttt{WriteResult} message back to the client.
 When the coordinator receives the forwarded write request, it first sends an acknowledgment to the replica that forwarded it and then it broadcasts an \texttt{UpdateMessage} to all replicas in the system. This message contains both the \texttt{WriteRequest} and the unique identifier,  consisting of an \texttt{epoch} $e$ and a \texttt{sequence number} $i$, assigned to the request by the coordinator.
 The coordinator then waits to receive an acknowledgment for the update from a quorum, which must consist of at least a strict majority of the system's replicas. 
