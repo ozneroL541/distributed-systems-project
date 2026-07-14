@@ -17,6 +17,18 @@ Finally, the replica removes the newly executed write from the local hash table 
 How do you manage timeouts?
 How do you control crashes?
 % TODO @ozneroL541
+In order to detect when the coordinator has crashed, it periodically sends an
+\texttt{Heartbeat} message in broadcast to all replicas in the system.
+Each replica maintains a timer that is reset every time it receives a 
+\texttt{Heartbeat} message from the coordinator.
+If a replica's timer expires without receiving a heartbeat, 
+it assumes that the coordinator has crashed and initiates the leader election protocol 
+to select a new coordinator.
+If the replica whose timer has expired is the current coordinator, 
+it will send an \texttt{Heartbeat} message to all replicas in the system 
+and set its own timer to half of the standard timeout value to trigger it 
+before the timer of the other replicas.
+
 \subsection{Election Protocol}
 How do you ensure election does not block forever?
 % TODO @ozneroL541
