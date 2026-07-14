@@ -2,10 +2,31 @@
 
 \subsection{System Architecture}
 % TODO @ozneroL541
+The system follows a distributed replica-based architecture implemented using 
+Akka actors, where each replica maintains a local copy of the shared positions 
+database and communicates exclusively through asynchronous immutable messages. 
+Client actors can contact any replica to issue read or write requests. 
+Read operations are served immediately using the replica's local state, 
+while write requests are forwarded to a replica whose act as coordinator. 
+The coordinator executes a quorum-based two-phase commit protocol 
+by first broadcasting an \texttt{UPDATE} message, collecting acknowledgements from a 
+strict majority of replicas, and then disseminating a \texttt{WRITEOK} message that 
+commits the update at all replicas.
+To ensure fault tolerance, the coordinator periodically send an heartbeat message to 
+all replicas, which monitor the its state in order to detect its crash.
+If the coordinator crashes, a ring-based election protocol selects 
+the most up-to-date replica as the new coordinator.
+Once the coordinator is elected, it initiates a synchronization phase
+sending its updated history to all replicas, which synchronizes any missing
+updates before resuming normal operation.
+Since the message passing is FIFO and reliable, this architecture guarantees
+sequential consistency, total ordering of updates, quorum-based fault tolerance, 
+and eventual convergence of all correct replicas despite node failures.
+
 \subsection{Code Structure}
 % TODO @ozneroL541
 \subsection{Our Assumptions}
 We assume that if a replica crashes after receiving a write request from a client,the operation will time out from the client's perspective. 
- Nevertheless, the write operation will still be processed and applied by the coordinator and the remaining correct replicas following the election of a new coordinator.
+Nevertheless, the write operation will still be processed and applied by the coordinator and the remaining correct replicas following the election of a new coordinator.
 Furthermore, we assume that a newly elected coordinator cannot crash during the synchronization phase (i.e., while broadcasting the \texttt{Synchronization} message)
 % TODO @ozneroL541
