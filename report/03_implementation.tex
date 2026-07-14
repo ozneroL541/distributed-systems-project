@@ -29,4 +29,11 @@ as this would also alter the replica's clock, which is used to determine the nex
 For this reason, the replica will store all incoming \texttt{WriteRequest} messages in the \texttt{pendingWrites} queue, but it will not process them until the election is over and a new coordinator has been elected.
 
 \subsection{Election Acknowledgment}
-% TODO @ozneroL541
+During the election protocol, every message sent in the ring topology requires an acknowledgment 
+from receiving replicas to ensure that the message has been received and processed correctly.
+To simplify the implementation, we decided to create a proper abstract class called \texttt{MessageWithAck} 
+which contains both the message as \texttt{Serializable} and the \texttt{senderID}.
+In this way, independently from the type of message, we can always manage
+the reply with ease.
+The two class which extend \texttt{MessageWithAck} are \texttt{Election} and \texttt{ElectionOver},
+respectively used to send the election message and to notify the end of the election.
