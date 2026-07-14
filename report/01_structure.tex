@@ -1,7 +1,6 @@
 \section{Project Structure}
 
 \subsection{System Architecture}
-% TODO @ozneroL541
 The system follows a distributed replica-based architecture implemented using 
 Akka actors, where each replica maintains a local copy of the shared positions 
 database and communicates exclusively through asynchronous immutable messages. 
@@ -24,7 +23,6 @@ sequential consistency, total ordering of updates, quorum-based fault tolerance,
 and eventual convergence of all correct replicas despite node failures.
 
 \subsection{Code Structure}
-% TODO @ozneroL541
 The project is structured around the Akka actor model with separate classes for
 system initialization, communication, client and replica management.
 The central component is the \texttt{Replica} class, which extends \texttt{AbstractReplica} 
