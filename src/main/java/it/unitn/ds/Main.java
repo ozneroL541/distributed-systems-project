@@ -14,8 +14,9 @@ public class Main {
         System.out.println("========================================");
         System.out.println("START");
         System.out.println("========================================\n");
-
+        @SuppressWarnings("unused")
         final int N_REPLICAS = 6;
+        @SuppressWarnings("unused")
         final int COORDINATOR_ID = 0;
         final ActorSystem system = ActorSystem.create("TestMain");
 
