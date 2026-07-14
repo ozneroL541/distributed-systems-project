@@ -632,7 +632,7 @@ public class Replica extends AbstractReplica {
 
         }
         else {
-            log("Sending an update request to the coordinator (ID: " + this.coordinatorID + ")" + " with content: {index:" + msg.index + ", value:" + msg.value + "}");
+            debug("sending an UPDATE request to coordinator (ID: " + this.coordinatorID + ")" + " with content: {index:" + msg.index + ", value:" + msg.value + "}");
             ActorRef coordinator = this.replicas.get(this.coordinatorID);
             coordinator.tell(msg, this.getSelf());
             this.writeRequestTimeouts.computeIfAbsent(msg, k -> new ArrayDeque<>())
@@ -725,7 +725,7 @@ public class Replica extends AbstractReplica {
             case TimeOut.TimeoutType.UpdateRequest:
             case TimeOut.TimeoutType.WriteRequest:
                 //debug("Coordinator crashed");
-                log("I don't receive an ACK for a " + msg.type +" in time, coordinator crashed");
+                debug("ACK not received for " + msg.type +", coordinator crashed");
                 this.coordinatorCrashed();
                 break;
             case TimeOut.TimeoutType.Heartbeat:
@@ -828,7 +828,7 @@ public class Replica extends AbstractReplica {
             // Update the next message clock to synchronize with the current update clock
             this.nextMessageClock.syncClock(this.updateClock);
             // send the Sync message to all replicas
-            log("Sending sync message");
+            debug("sending SYNCHRONIZATION message");
             this.multicast(syncMessage, null);
         }
     }
@@ -1050,7 +1050,7 @@ public class Replica extends AbstractReplica {
      * Send a heartbeat message to all replicas.
      */
     private void sendHeartbeat() {
-        log("Sending HEARTBEAT");
+        debug("Sending HEARTBEAT");
         this.multicast(new CoordinatorHeartbeat(this.id), Crash.Type.Heartbeat);
     }
 
@@ -1122,7 +1122,7 @@ public class Replica extends AbstractReplica {
         for (UpdateClock clk : ordered_clock) {
             AbstractClient.WriteRequest writeRequest = this.waitingForWriteOK.get(clk);
             this.positions[writeRequest.index] = writeRequest.value;
-            log("I'm the coordinator, updating my history: " + clk.getE() +":" + clk.getI() + " (index="+writeRequest.index +" value=" + writeRequest.value +")");
+            debug("I'm the coordinator, updating my history: " + clk.getE() +":" + clk.getI() + " (index="+writeRequest.index +" value=" + writeRequest.value +")");
             this.history.put(clk.clone(), new AbstractClient.WriteRequest(writeRequest.index, writeRequest.value, writeRequest.replica));
             // ACK the client
             this.getPendingWrite(writeRequest);
