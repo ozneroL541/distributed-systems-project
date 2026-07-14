@@ -79,15 +79,18 @@ public class Replica extends AbstractReplica {
         public final int electionStarter;
         /** A map of all candidates in the election, with their IDs as keys and clock values as values */
         public final Map<Integer, UpdateClock> candidates = new HashMap<Integer, UpdateClock>();
+        public final Map<Integer, UpdateClock> worst_clock_candidates = new HashMap<Integer, UpdateClock>();
         /**
          * Constructor for ElectionMessage
          * @param electionStarter the ID of the node that started the election
          * @param nodeClock the clock value of the node that started the election
+         * @param worstClock the clock (that is updated when a message is written in the history) of the node that started the election
          */
-        public ElectionMessage(int electionStarter, UpdateClock nodeClock) {
+        public ElectionMessage(int electionStarter, UpdateClock nodeClock, UpdateClock worstClock) {
             final UpdateClock clock = nodeClock.clone();
             this.electionStarter = electionStarter;
             this.candidates.put(electionStarter, clock);
+            this.worst_clock_candidates.put(electionStarter, worstClock.clone());
         }
         /**
          * Update the message with the information of a replica
@@ -95,7 +98,9 @@ public class Replica extends AbstractReplica {
          */
         public ElectionMessage updateMsg(Replica replica) {
             final UpdateClock clock = replica.waitingForWriteOkUpdateClock.clone();
+            final UpdateClock worst_clock = replica.updateClock.clone();
             this.candidates.put(replica.id, clock);
+            this.worst_clock_candidates.put(replica.id, worst_clock);
             this.deleteCrashedNodesFromCandidates(replica.replicas);
             return (ElectionMessage) this.clone();
         }
@@ -104,9 +109,12 @@ public class Replica extends AbstractReplica {
          * @return a clone of the election message
          */
         public Object clone() {
-            ElectionMessage clone = new ElectionMessage(this.electionStarter, this.candidates.get(this.electionStarter));
+            ElectionMessage clone = new ElectionMessage(this.electionStarter, this.candidates.get(this.electionStarter), this.worst_clock_candidates.get(this.electionStarter));
             for (Map.Entry<Integer, UpdateClock> entry : this.candidates.entrySet()) {
                 clone.candidates.put(entry.getKey(), entry.getValue());
+            }
+            for (Map.Entry<Integer, UpdateClock> entry : this.worst_clock_candidates.entrySet()) {
+                clone.worst_clock_candidates.put(entry.getKey(), entry.getValue());
             }
             return clone;
         }
@@ -144,7 +152,8 @@ public class Replica extends AbstractReplica {
          * @return the worst clock, or null if there are no candidates
          */
         public UpdateClock getWorstClock() {
-            final UpdateClock worstClock = candidates.values().stream().min(UpdateClock::compareTo).orElse(new UpdateClock()).clone();
+//            final UpdateClock worstClock = candidates.values().stream().min(UpdateClock::compareTo).orElse(new UpdateClock()).clone();
+            final UpdateClock worstClock = worst_clock_candidates.values().stream().min(UpdateClock::compareTo).orElse(new UpdateClock()).clone();
             return worstClock;
         }
         /**
@@ -170,6 +179,7 @@ public class Replica extends AbstractReplica {
                 return;
             }
             this.candidates.keySet().removeIf(id -> !replicas.containsKey(id));
+            this.worst_clock_candidates.keySet().removeIf(id -> !replicas.containsKey(id));
         }
         /**
          * Delete crashed nodes from replicas list based on the current list of candidates.
@@ -219,8 +229,8 @@ public class Replica extends AbstractReplica {
          * @param electionStarter the ID of the node that started the election
          * @param nodeClock the clock value of the node that started the election
          */
-        public Election(int electionStarter, UpdateClock nodeClock) {
-            super(electionStarter, new ElectionMessage(electionStarter, nodeClock));
+        public Election(int electionStarter, UpdateClock nodeClock, UpdateClock worstClock) {
+            super(electionStarter, new ElectionMessage(electionStarter, nodeClock, worstClock));
         }
         public Election(int senderID, ElectionMessage msg) {
             super(senderID, msg);
@@ -370,7 +380,8 @@ public class Replica extends AbstractReplica {
         /** The shortened history of updates */
         final Map<UpdateClock, AbstractClient.WriteRequest> shortnedHistory = new TreeMap<UpdateClock, AbstractClient.WriteRequest>();
         for (Map.Entry<UpdateClock, AbstractClient.WriteRequest> entry : history.entrySet()) {
-            if (entry.getKey().compareTo(clock) > 0) {
+            // CHANGED
+            if (entry.getKey().compareTo(clock) >= 0) {
                 shortnedHistory.put(entry.getKey(), entry.getValue());
             }
         }
@@ -804,9 +815,10 @@ public class Replica extends AbstractReplica {
      */
     private void onElectedCoordinator(int newCoordinatorId, UpdateClock worstClock) {
         /** The shortened history of updates */
-        final Map<UpdateClock, AbstractClient.WriteRequest> shortnedHistory = this.getShortnedHistory(worstClock);
+//        final Map<UpdateClock, AbstractClient.WriteRequest> shortnedHistory = this.getShortnedHistory(worstClock);
         // Update the coordinator ID and handle the event when a new coordinator is elected
         this.newCoordinator(newCoordinatorId);
+        final Map<UpdateClock, AbstractClient.WriteRequest> shortnedHistory = this.getShortnedHistory(worstClock);
         // If this replica is the new coordinator, create a Synchronization message with the current history and worst clock
         if (this.isCoordinator()) {
             // Create a Synchronization message with the current history and worst clock
@@ -986,7 +998,7 @@ public class Replica extends AbstractReplica {
     private void startElection() {
         //debug("Election started by replica: " + this.id);
     // ElectionMessage electionMessage = new ElectionMessage(this.id, this.updateClock);
-        Election election = new Election(this.id, this.waitingForWriteOkUpdateClock.clone());
+        Election election = new Election(this.id, this.waitingForWriteOkUpdateClock.clone(), this.updateClock.clone());
         if (this.isElectionInProgress() && this.electionInProgress <= this.id) {
             // An election is already in progress
             return;
