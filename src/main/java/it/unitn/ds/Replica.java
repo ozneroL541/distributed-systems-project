@@ -477,9 +477,9 @@ public class Replica extends AbstractReplica {
 
     @Override
     public int getSystemNumberOfActors() {
-        //  return 0;
-        return this.numberOfReplicas;
+        // return 0;
         //return this.replicas.size();
+        return this.numberOfReplicas;
     }
 
     // =================================================================================
@@ -489,7 +489,7 @@ public class Replica extends AbstractReplica {
     @Override
     public void crash(AbstractReplica.Crash how_to_crash) {
         if (how_to_crash.type == Crash.Type.Now || how_to_crash.after_n_messages_of_type == 0) {
-            log("Replica crashed");
+            log("CRASHED");
             getContext().become(crashed());
         } else {
             this.scheduled_crash_type = how_to_crash.type;
@@ -504,7 +504,7 @@ public class Replica extends AbstractReplica {
         this.numberOfReplicas = sysInit.group.size();
         int coordinator_id = sysInit.coordinator_id;
         this.coordinatorID = coordinator_id;
-        log("I set as coordinator: "+coordinator_id);
+        //debug("I set as coordinator: "+coordinator_id);
         if (this.isCoordinator()) {
             this.sendHeartbeat();
         }
@@ -606,22 +606,22 @@ public class Replica extends AbstractReplica {
     }
     private void onWriteRequest(AbstractClient.WriteRequest msg) {
         if (getSender() != msg.replica) {
-            debug("Inserting the request inside my pending write queue");
+            //debug("Inserting the request inside my pending write queue");
             this.pendingWrites.add(new ClientWrite(getSender(), msg));
         }
-        log("Received a Write request by "+ getSender().path().name() + " with content: {index:"+msg.index+", value:"+msg.value+"}");
+        //debug("Received a Write request by "+ getSender().path().name() + " with content: {index:"+msg.index+", value:"+msg.value+"}");
         if (this.isCoordinator()) {
-            log("I'm the coordinator; Sending the update message");
+            //debug("I'm the coordinator; Sending the update message");
             this.nextMessageClock.incrementI();
             UpdateClock clock = new UpdateClock(this.nextMessageClock.getE(), this.nextMessageClock.getI());
             UpdateRequest updateRequest = new UpdateRequest(clock, this.getSelf(), msg);
-            debug("Sending message with "+ updateRequest.identifier.getE()+updateRequest.identifier.getI());
+            debug("Sending UpdateRequest to all replicas --> "+ updateRequest.identifier.getE() +":" +updateRequest.identifier.getI() + " (" + msg.index + "," + msg.value + ")");
             this.UpdateACKCounter.put(updateRequest.identifier, 0);
             multicast(updateRequest, Crash.Type.Update);
 
         }
         else {
-            log("Sending an update request to the coordinator (ID: " + this.coordinatorID + ")" + " with content: {index:" + msg.index + ", value:" + msg.value + "}");
+            debug("sending an UPDATE request to coordinator (ID: " + this.coordinatorID + ")" + " with content: {index:" + msg.index + ", value:" + msg.value + "}");
             ActorRef coordinator = this.replicas.get(this.coordinatorID);
             coordinator.tell(msg, this.getSelf());
             this.writeRequestTimeouts.computeIfAbsent(msg, k -> new ArrayDeque<>())
@@ -629,7 +629,7 @@ public class Replica extends AbstractReplica {
         }
     }
     private void onUpdateRequest(Replica.UpdateRequest msg) {
-        log("Received an Update request from coordinator with content: {index:"+msg.writeRequest.index+", value:"+msg.writeRequest.value+"} and id: "+ msg.identifier.getE()+":"+msg.identifier.getI());
+        //debug("Received an Update request from coordinator with content: {index:"+msg.writeRequest.index+", value:"+msg.writeRequest.value+"} and id: "+ msg.identifier.getE()+":"+msg.identifier.getI());
         // cancel the WriteRequest timeout
         Queue<Cancellable> timeouts = this.writeRequestTimeouts.get(msg.writeRequest);
         if ( timeouts != null) {
@@ -641,7 +641,7 @@ public class Replica extends AbstractReplica {
         // add update to waiting for WriteOK
         this.waitingForWriteOkUpdateClock.syncClock(msg.identifier);
         waitingForWriteOK.put(msg.identifier, msg.writeRequest);
-        debug("Sending updateACK :" + msg.identifier.getI() +"---"+ msg.writeRequest.index +" "+msg.writeRequest.index);
+        //debug("Sending updateACK :" + msg.identifier.getI() +"---"+ msg.writeRequest.index +" "+msg.writeRequest.index);
         msg.coordinator.tell(new UpdateACK(msg.identifier), this.getSelf());
         this.updateRequestTimeouts
                 .putIfAbsent(msg.identifier, setTimeout(TIMEOUT_DELAY,new TimeOut(TimeOut.TimeoutType.UpdateRequest)));
@@ -649,10 +649,10 @@ public class Replica extends AbstractReplica {
         this.checkIfTimeToCrash(Crash.Type.Update);
     }
     private void onUpdateACK(Replica.UpdateACK msg) {
-        debug("received ack from "+ getSender().path().name()+"for clock: "+ msg.identifier.getE()+msg.identifier.getI());
+        //debug("received ack from "+ getSender().path().name()+"for clock: "+ msg.identifier.getE()+msg.identifier.getI());
         Integer ACKnumber = UpdateACKCounter.get(msg.identifier);
         if (ACKnumber == null) {
-            debug("ACKNumber null "+ msg.identifier.getI() +" -- " +ACKnumber);
+            //debug("ACKNumber null "+ msg.identifier.getI() +" -- " +ACKnumber);
             return;
         }
         ACKnumber += 1;
@@ -670,7 +670,7 @@ public class Replica extends AbstractReplica {
 
     }
     private void onWriteOK(Replica.WriteOK msg) {
-        log("Received a WriteOK message from the coordinator, applying the update");
+        //debug("Received a WriteOK message from the coordinator, applying the update");
         // cancel the UpdateRequest timeout
         Cancellable timeout = this.updateRequestTimeouts.remove(msg.identifier);
         if ( timeout != null) {
@@ -687,13 +687,15 @@ public class Replica extends AbstractReplica {
         this.history.put(identifier,writeRequest);
         this.updateClock.syncClock(identifier);
         this.callbackOnUpdateApplied(writeRequest.index,writeRequest.value);
-        debug("New positions is: "+ Arrays.toString(this.positions));
-        debug("pending write"+ pendingWrites.toString());
-
+        // – [Replica <ReplicaID>] applied update <epoch>:<sequence number> (<idx>, <val>)
+        log("applied update " + identifier.getE() + ":" + identifier.getI() + " (" + writeRequest.index + ", " + writeRequest.value + ")");
+        
+        //debug("New positions is: "+ Arrays.toString(this.positions));
+        //debug("pending write"+ pendingWrites.toString());
         getPendingWrite(writeRequest);
     }
     private void onReadRequest(AbstractClient.ReadRequest msg) {
-        debug("Received a Read request from client");
+        //debug("Received a Read request from client");
         int position = this.positions[msg.index];
         getSender().tell( new Replica.ClientACK(this.getSelf(), new AbstractClient.ReadResult(true,msg.index, position, this.id)), this.getSelf());
     }
@@ -704,18 +706,19 @@ public class Replica extends AbstractReplica {
     private void onTimeOut(TimeOut msg) {
         switch (msg.type) {
             case TimeOut.TimeoutType.SendRead:
-                log("Timeout on read request");
+                //debug("Timeout on read request");
                 break;
             case TimeOut.TimeoutType.SendWrite:
-                log("Timeout on write request");
+                //debug("Timeout on write request");
                 break;
             case TimeOut.TimeoutType.UpdateRequest:
             case TimeOut.TimeoutType.WriteRequest:
-                debug("CRASH");
+                //debug("Coordinator crashed");
+                debug("ACK not received for " + msg.type +", coordinator crashed");
                 this.coordinatorCrashed();
                 break;
             case TimeOut.TimeoutType.Heartbeat:
-                debug("TIMEOUT on HeartBeat");
+                //debug("TIMEOUT on HeartBeat");
                 this.onHeartbeatTimeout();
                 break;
             case TimeOut.TimeoutType.Election:
@@ -737,7 +740,6 @@ public class Replica extends AbstractReplica {
     private void onCoordinatorCrash() {
         // Delete heartbeat timeout if it exists
         if (this.coordinatorHeartbeatTimeout != null) {
-            debug("HEARTBIT ELEIMINATO PRECHé* CRASH");
             this.coordinatorHeartbeatTimeout.cancel();
             this.coordinatorHeartbeatTimeout = null;
         }
@@ -754,7 +756,7 @@ public class Replica extends AbstractReplica {
         // Callback to notify that a new coordinator has been elected
         this.callbackOnCoordinatorElected(this.coordinatorID);
         // Reset heartbeat timeout since a new coordinator has been elected
-        debug("SETTINg");
+        //debug("Resetting heartbeat timeout for new coordinator: " + this.coordinatorID);
         if (this.coordinatorHeartbeatTimeout != null) {
             this.coordinatorHeartbeatTimeout.cancel();
         }
@@ -774,7 +776,7 @@ public class Replica extends AbstractReplica {
             return;
         }
         // Update the coordinator ID
-        log("SETTTING COORD AS " +  newCoordinatorId);
+        //debug("Acknowledging coordinator: " + newCoordinatorId);
         this.coordinatorID = newCoordinatorId;
         // Handle the event when a new coordinator is elected
         this.onNewCoordinator();
@@ -783,7 +785,7 @@ public class Replica extends AbstractReplica {
      * Handle the event when this replica becomes the coordinator.
      */
     private void onBecameCoordinator() {
-        debug("I am the new COORDINATOR");
+        //debug("I am the new COORDINATOR");
         this.sendHeartbeat();
         // preare the Sync message
         this.updateHistory();
@@ -814,6 +816,7 @@ public class Replica extends AbstractReplica {
             // Update the next message clock to synchronize with the current update clock
             this.nextMessageClock.syncClock(this.updateClock);
             // send the Sync message to all replicas
+            debug("sending SYNCHRONIZATION message");
             this.multicast(syncMessage, null);
         }
     }
@@ -823,12 +826,11 @@ public class Replica extends AbstractReplica {
      * @param msg the coordinator elected message
      */
     private void onElectionOver(ElectionOver msg) {
-        debug("ELECTION IS OVER, I RECEIVE " + msg.toString());
+        //debug("Election over: " + msg.toString());
         // Update the coordinator ID and handle the event when a new coordinator is elected
         this.onElectedCoordinator(msg.getMsg().coordinatorElected.newCoordinatorId, msg.getMsg().worstClock);
         // Send an acknowledgment to the sender of the election message
         this.sendAckToSender(msg);
-        debug("PO " + this.isElectionInProgress());
         // If an election is in progress, reset the election state and forward the message to the next replica
         if (!this.isElectionInProgress()) {
             return;
@@ -836,7 +838,6 @@ public class Replica extends AbstractReplica {
         // Reset the election state and forward the message to the next replica
         this.electionInProgress = null;
         // Avoid infinite loops by checking if the message is from this replica
-        debug("PO " + msg.getMsg().coordinatorElected.replicaId);
         if (msg.getMsg().coordinatorElected.replicaId == this.id) {
             if (this.syncMessage != null) {
                 this.onSyncMessage(this.syncMessage);
@@ -844,7 +845,6 @@ public class Replica extends AbstractReplica {
             return;
         }
         this.sendToNextReplica(msg);
-        log("che è SYNC?" + msg.toString());
         if (this.syncMessage != null) {
             this.onSyncMessage(this.syncMessage);
         }
@@ -860,7 +860,7 @@ public class Replica extends AbstractReplica {
         Integer senderId = msg.senderId;
         if (senderId != null && this.replicas.containsKey(senderId)) {
             ActorRef senderReplica = this.replicas.get(senderId);
-            debug("Sending ack to: "+senderReplica.path().name() +" for message:" + msg +"|"+ msg.msg.toString()+"|");
+            //debug("Sending ack to: "+senderReplica.path().name() +" for message:" + msg +"|"+ msg.msg.toString()+"|");
             senderReplica.tell(ack, this.getSelf());
         }
     }
@@ -870,7 +870,7 @@ public class Replica extends AbstractReplica {
      * @param msg the election message
      */
     private void onElectionMessage(Election msg) {
-        debug("Received ElectionMSG:" + msg.toString()+"|"+msg.msg.toString()+"|"+" from: "+getSender().path().name());
+        //debug("Received ElectionMSG:" + msg.toString()+"|"+msg.msg.toString()+"|"+" from: "+getSender().path().name());
         if (msg.getMsg().isElectionOver(electionInProgress)) {
             /** Best candidate for coordinator */
             Integer bestCandidate = msg.getMsg().getBestCandidate();
@@ -884,12 +884,11 @@ public class Replica extends AbstractReplica {
                                 msg.getMsg().getWorstClock()
                             )
                     );
-                log("PO" + String.valueOf(this.isElectionInProgress()));
                 this.sendToNextReplica(coordinatorElected);
                 this.newCoordinator(bestCandidate);
             }
         } else if (!this.isElectionInProgress() || this.electionInProgress <= msg.getMsg().electionStarter) {
-            log("I'm not ignoring this message from " +  msg.getMsg().electionStarter +" | my id  " + this.electionInProgress);
+            //debug("I'm not ignoring this message from " +  msg.getMsg().electionStarter +" | my id  " + this.electionInProgress);
             if (!this.isElectionInProgress()) {
                 this.callbackOnElectionStarted(this.coordinatorID);
             }
@@ -898,7 +897,6 @@ public class Replica extends AbstractReplica {
             msg.updateMsg(this);
             this.sendToNextReplica(msg);
         }
-        log("IM IGNORING THIS MESSAGE FIR " + msg.getMsg().electionStarter +" | my id  " + this.electionInProgress);
         this.sendAckToSender(msg);
     }
     /**
@@ -929,7 +927,7 @@ public class Replica extends AbstractReplica {
      */
     private synchronized int getNextAliveReplicaID() {
         if (this.replicas == null || this.replicas.isEmpty()) {
-            debug("No replicas available. Returning -1 as next alive replica ID.");
+            //debug("No replicas available. Returning -1 as next alive replica ID.");
             return this.nextReplicaID;
         }
         if (this.nextReplicaID == null) {
@@ -938,15 +936,15 @@ public class Replica extends AbstractReplica {
         while (!this.replicas.containsKey(this.nextReplicaID)) {
             this.nextReplicaID = this.correctNextReplicaID(this.nextReplicaID);
         }
-        debug("My next replica is: "+ this.nextReplicaID);
+        //debug("My next replica is: "+ this.nextReplicaID);
         return this.nextReplicaID;
     }
     /**
      * Handle an election timeout.
      */
     private void onElectionTimeout(TimeOut msg) {
-        debug("Election timeout. Removing the next replica from the list of replicas.");
-        // get and remove the first inserted ElectionMessage in the electionTimeouts map
+        //debug("Election timeout. Removing the next replica from the list of replicas.");
+        // Retrieve and remove the first inserted ElectionMessage in the electionTimeouts map
         if (this.nextReplicaID == null) {
             this.nextReplicaID = this.getNextAliveReplicaID();
         } else {
@@ -965,7 +963,7 @@ public class Replica extends AbstractReplica {
      * @param msg the election acknowledgment message
      */
     private void onElectionAck(ElectionAck msg) {
-        debug("Received an ElectionAck for message "+ msg.electionMessage.toString());
+        //debug("Received an ElectionAck for message "+ msg.electionMessage.toString());
         this.electionTimeouts.get(msg.electionMessage).remove().cancel();
     }
     /**
@@ -975,7 +973,7 @@ public class Replica extends AbstractReplica {
     private void sendToNextReplica(MessageWithACK msg) {
         ActorRef nextReplica = this.replicas.get(this.getNextAliveReplicaID());
         MessageWithACK updatedMsg = msg.updateSender(this.id);
-        debug("The message is an instance of class: " + msg.getClass() + " and is a " +msg.toString());
+        //debug("The message is an instance of class: " + msg.getClass() + " and is a " +msg.toString());
         nextReplica.tell(updatedMsg, this.getSelf());
         this.electionTimeouts.computeIfAbsent(updatedMsg.msg, k -> new ArrayDeque<>())
                 .add(setTimeout(this.getMaxLatencyPlusTolerance(),new TimeOut(TimeoutType.Election)));
@@ -986,7 +984,7 @@ public class Replica extends AbstractReplica {
      * Start an election.
      */
     private void startElection() {
-        debug("ELECTION STARTED!!!!");
+        //debug("Election started by replica: " + this.id);
     // ElectionMessage electionMessage = new ElectionMessage(this.id, this.updateClock);
         Election election = new Election(this.id, this.waitingForWriteOkUpdateClock.clone());
         if (this.isElectionInProgress() && this.electionInProgress <= this.id) {
@@ -996,14 +994,14 @@ public class Replica extends AbstractReplica {
         this.electionInProgress = this.id;
         this.callbackOnElectionStarted(this.coordinatorID);
         this.sendToNextReplica(election);
-        debug("Starting an election with message: " + election.toString());
+        //debug("Starting an election with message: " + election.toString());
     }
     /**
      * Handle a heartbeat message from the coordinator.
      * @param msg the heartbeat message
      */
     private void onHeartbeat(CoordinatorHeartbeat msg) {
-//        debug("Received HEARTBEAT from: " + msg.currentCoordinatorId);
+        //debug("Received HEARTBEAT from: " + msg.currentCoordinatorId);
         /** Handle a heartbeat message from the coordinator */
         long timeout = (long)COORDINATOR_BEAT_INTERVAL;
         // If this replica is the coordinator
@@ -1013,7 +1011,7 @@ public class Replica extends AbstractReplica {
         }
         // Cancel the previous heartbeat timeout
         if (this.coordinatorHeartbeatTimeout != null) {
-//            debug("REMOVE!");
+            //debug("REMOVE!");
             this.coordinatorHeartbeatTimeout.cancel();
         }
         // Set a new heartbeat timeout
@@ -1025,10 +1023,10 @@ public class Replica extends AbstractReplica {
      * Otherwise, handle the coordinator crash.
      */
     private void onHeartbeatTimeout() {
-//        debug("Heartbeat timed out.");
+        //debug("Heartbeat timed out.");
         // If the coordinator is this replica, send a heartbeat message
         if (this.isCoordinator()) {
-//            debug("I am the coord");
+            //debug("I am the coord");
             this.sendHeartbeat();
         }
         // Otherwise, handle the coordinator crash 
@@ -1047,7 +1045,7 @@ public class Replica extends AbstractReplica {
 
     private void onSyncMessage(Synchronization msg) {
         if (this.isElectionInProgress()) {
-            log("RECIVED SYNC MA NON SO COORD");
+            //debug("Received SYNC but currently in election");
             this.syncMessage = msg;
             return;
         }
@@ -1071,7 +1069,7 @@ public class Replica extends AbstractReplica {
             WriteOK m = this.writeOKQueue.remove();
             this.onWriteOK(m);
         }
-        debug("SYNC NEW COORDINATOR: " + this.coordinatorID);
+        //debug("SYNC, New coordinator: " + this.coordinatorID);
         for (Replica.ClientWrite w : this.pendingWrites) {
             replicas.get(this.coordinatorID).tell(w.writeRequest, this.getSelf());
             this.writeRequestTimeouts.computeIfAbsent(w.writeRequest, k -> new ArrayDeque<>())
@@ -1112,6 +1110,7 @@ public class Replica extends AbstractReplica {
         for (UpdateClock clk : ordered_clock) {
             AbstractClient.WriteRequest writeRequest = this.waitingForWriteOK.get(clk);
             this.positions[writeRequest.index] = writeRequest.value;
+            debug("I'm the coordinator, updating my history: " + clk.getE() +":" + clk.getI() + " (index="+writeRequest.index +" value=" + writeRequest.value +")");
             this.history.put(clk.clone(), new AbstractClient.WriteRequest(writeRequest.index, writeRequest.value, writeRequest.replica));
             // ACK the client
             this.getPendingWrite(writeRequest);

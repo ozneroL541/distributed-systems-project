@@ -18,6 +18,23 @@ public class Client extends AbstractClient {
     }
 
     /**
+     * Helper function to extract the replica ID from the ActorRef of the replica.
+     * The ActorRef name is expected to be in the format "Replica_<ID>".
+     * If the format is not as expected, it returns the full name of the ActorRef.
+     * @param replica The ActorRef of the replica from which to extract the ID.
+     * @return The extracted replica ID as a String, or the full name of the ActorRef if extraction fails.
+     */
+    private static String getReplicaID(ActorRef replica) {
+        /** Full replica name */
+        final String replicaName = replica.path().name();
+        try {
+            return replicaName.split("_")[1];
+        } catch (Exception e) {
+            return replicaName; // Fallback to the full name if extraction fails
+        }
+    }
+
+    /**
      * List of all alive replicas of the system.
      * Integer is the id of the replica,
      * ActorRef is the reference of the Replica inside AKKA
@@ -28,19 +45,21 @@ public class Client extends AbstractClient {
     /** HashMap to store Cancellable for timeout on the writeRequest message send to the coordinator */
     private final HashMap<String, Queue<Cancellable>> sendReadRequestTimeouts = new HashMap<>();
 
+    // =============================
+
+
     Client(long readTimeoutDelay, long writeTimeoutDelay, Optional<ActorRef> defaultTargetReplica, Optional<ActorRef> listener) {
         super(readTimeoutDelay, writeTimeoutDelay, listener, defaultTargetReplica);
     }
-
-    // =============================
-
 
     // =================================================================================
     // Helper functions
     // =================================================================================
     @Override
     public void sendRead(ActorRef replica, int index) {
-        log("Sending a Read request to:"+ replica.path().name());
+        // TODO: Should be ReplicaID
+        // – [Client <ClientName>] requesting READ (<idx>) to <ReplicaID>
+        log("requesting READ " + index + " to " + Client.getReplicaID(replica));
         replica.tell(new AbstractClient.ReadRequest(index, replica), this.getSelf());
         Queue<Cancellable> queue = this.sendReadRequestTimeouts.computeIfAbsent(replica.path().name(), k -> new ArrayDeque<>());
         queue.add(getContext().system().scheduler().scheduleOnce(
@@ -53,7 +72,9 @@ public class Client extends AbstractClient {
 
     @Override
     public void sendWrite(ActorRef replica, int index, int value) {
-        log("Sending a Write request to: " + replica.path().name() +" with content: {index:"+index+", value:"+value+"}");
+        // TODO: Should be ReplicaID
+        // – [Client <ClientName>] requesting WRITE (<idx>, <val>) to <ReplicaID>
+        log("requesting WRITE " + index + ", " + value + " to " + Client.getReplicaID(replica));
         replica.tell(new AbstractClient.WriteRequest(index, value, replica),this.getSelf());
         Queue<Cancellable> queue = this.sendWriteRequestTimeouts.computeIfAbsent(replica.path().name(), k -> new ArrayDeque<>());
         queue.add(getContext().system().scheduler().scheduleOnce(
@@ -63,7 +84,6 @@ public class Client extends AbstractClient {
                 getContext().system().dispatcher(), getSelf()
         ));
     }
-
     @Override
     public final Receive createReceive() {
         return createBaseReceiveBuilder()
@@ -72,6 +92,7 @@ public class Client extends AbstractClient {
                 .match(AbstractClient.ReadTimeout.class,  this::onReadTimeOut)
                 .build();
     }
+
     private void onResult(Replica.ClientACK msg) {
         String key = msg.actorRef.path().name();
         // Cancellable timeout;
@@ -90,7 +111,6 @@ public class Client extends AbstractClient {
 
         }
     }
-
     private void onWriteTimeOut(AbstractClient.WriteTimeout msg) {
         callbackOnWriteTimeout(msg);
         String key = msg.replica.path().name();
@@ -100,6 +120,7 @@ public class Client extends AbstractClient {
         }
 
     }
+
     private void onReadTimeOut(AbstractClient.ReadTimeout msg) {
         callbackOnReadTimeout(msg);
         String key = msg.replica.path().name();
