@@ -23,7 +23,7 @@ How do you ensure election does not block forever?
 \subsection{Synchronization Protocol}
 Once a new coordinator is elected, it must perform a series of operations before restoring the system to the default state.
 First, it will broadcast a \texttt{Heartbeat} message to all replicas in the system. It is crucial that this is one of the coordinator's initial actions to prevent replicas from timing out due to a lack of \texttt{Heartbeat} messages, which would trigger a new, erroneous election.
-Once the initial \texttt{Heartbeat} messages have been dispatched, the coordinator must ensure that all not completed write messages are properly processed. There are two categories of these write messages:
+Once the initial \texttt{Heartbeat} messages have been dispatched, the coordinator must ensure that all uncompleted write messages are properly processed. There are two categories of these write messages:
 \begin{itemize}
     \item Messages that the previous coordinator has already assigned an identifier to.
     \item Messages received by a replica but never successfully forwarded to the coordinator, meaning they do not yet have an assigned identifier.
