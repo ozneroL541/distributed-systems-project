@@ -25,9 +25,8 @@ and eventual convergence of all correct replicas despite node failures.
 
 \subsection{Code Structure}
 % TODO @ozneroL541
-The project is structured around the Akka actor model, 
-with separate classes for system initialization, communication, client, 
-and replica management.
+The project is structured around the Akka actor model with separate classes for
+system initialization, communication, client and replica management.
 The central component is the \texttt{Replica} class, which extends \texttt{AbstractReplica} 
 and implements the distributed protocol: it stores the replicated data and update history, 
 processes read and write requests, coordinates updates through acknowledgements and 
