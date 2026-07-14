@@ -26,17 +26,15 @@ and eventual convergence of all correct replicas despite node failures.
 \subsection{Code Structure}
 % TODO @ozneroL541
 The project is structured around the Akka actor model, 
-with separate classes for system initialization, communication, client operations, 
-and replicated-state management.
-The \texttt{Main} class creates the actor system, initializes replicas and clients,
-and defines test scenarios involving concurrent writes and coordinator failures.
-The central component is \texttt{Replica}, which extends \texttt{AbstractReplica} 
+with separate classes for system initialization, communication, client, 
+and replica management.
+The central component is the \texttt{Replica} class, which extends \texttt{AbstractReplica} 
 and implements the distributed protocol: it stores the replicated data and update history, 
 processes read and write requests, coordinates updates through acknowledgements and 
 quorums, detects failures using heartbeats and timeouts, and manages coordinator elections 
 and state synchronization after a crash.
-The \texttt{Client} class extends \texttt{AbstractClient} and provides the interface 
-between users and the replica system by sending read and write requests, scheduling 
+The \texttt{Client} class extends \texttt{AbstractClient} and provides act as a users 
+which contact the replicas by sending read and write requests, scheduling 
 operation-specific timeouts, receiving acknowledgements, cancelling completed timeout tasks, 
 and reporting successful or failed operations through the callback mechanisms defined by 
 its abstract superclass.
