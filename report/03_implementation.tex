@@ -1,6 +1,7 @@
 \section{Implementation}
 In this section, we want to show how the design choices made in the design section (\ref{sec:sys-design}) have been implemented in the code. 
-\section{Read}
+
+\subsection{Read}
 For the read operation, the implementation was straightforward. The replica simply returns the value associated with the requested key from its positions array.
 Thanks to the broadcast protocol's design, a \texttt{ReadRequest} message sent after receiving a \texttt{WriteResult} for a previous
 write operation will always return the value of the write or a more recent one.
@@ -8,7 +9,8 @@ The \texttt{ReadRequest} messages are handled by the \texttt{onReadRequest} meth
 Even during the election protocol, the \texttt{ReadRequest} messages are handled in the same way.
 During an election, the replica may not have the most up-to-date information,but it will still return a possibly outdated but valid
 \texttt{ReadResult} message, avoiding unnecessary read timeouts for the client.
-\section{Write}
+
+\subsection{Write}
 For handling \texttt{WriteRequest} messages, each replica has three data structures:
 \begin{enumerate}
     \item A queue called \texttt{pendingWrites}, implemented with an \texttt{ArrayDeque}, that keeps all the \texttt{WriteRequest} messages received from clients.
@@ -25,6 +27,6 @@ Nevertheless, given the assumptions of reliable and FIFO channels, we can assume
 During elections, a replica cannot modify its own data structures, 
 as this would also alter the replica's clock, which is used to determine the next coordinator.
 For this reason, the replica will store all incoming \texttt{WriteRequest} messages in the \texttt{pendingWrites} queue, but it will not process them until the election is over and a new coordinator has been elected.
-% TODO @AleCornella
-\section{Election Acknowledgment}
+
+\subsection{Election Acknowledgment}
 % TODO @ozneroL541
