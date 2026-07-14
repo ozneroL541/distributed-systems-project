@@ -25,8 +25,30 @@ and eventual convergence of all correct replicas despite node failures.
 
 \subsection{Code Structure}
 % TODO @ozneroL541
+The project is structured around the Akka actor model, 
+with separate classes for system initialization, communication, client operations, 
+and replicated-state management.
+The \texttt{Main} class creates the actor system, initializes replicas and clients,
+and defines test scenarios involving concurrent writes and coordinator failures.
+The central component is \texttt{Replica}, which extends \texttt{AbstractReplica} 
+and implements the distributed protocol: it stores the replicated data and update history, 
+processes read and write requests, coordinates updates through acknowledgements and 
+quorums, detects failures using heartbeats and timeouts, and manages coordinator elections 
+and state synchronization after a crash.
+The \texttt{Client} class extends \texttt{AbstractClient} and provides the interface 
+between users and the replica system by sending read and write requests, scheduling 
+operation-specific timeouts, receiving acknowledgements, cancelling completed timeout tasks, 
+and reporting successful or failed operations through the callback mechanisms defined by 
+its abstract superclass.
+Supporting classes further separate concerns: \texttt{NetworkChannel} simulates FIFO 
+network communication with random latency, \texttt{UpdateClock} provides logical 
+ordering for updates, and \texttt{Logger} centralizes diagnostic output.
+
 \subsection{Our Assumptions}
-We assume that if a replica crashes after receiving a write request from a client,the operation will time out from the client's perspective. 
-Nevertheless, the write operation will still be processed and applied by the coordinator and the remaining correct replicas following the election of a new coordinator.
-Furthermore, we assume that a newly elected coordinator cannot crash during the synchronization phase (i.e., while broadcasting the \texttt{Synchronization} message)
+We assume that if a replica crashes after receiving a write request from a 
+client,the operation will time out from the client's perspective. 
+Nevertheless, the write operation will still be processed and applied by the 
+coordinator and the remaining correct replicas following the election of a new coordinator.
+Furthermore, we assume that a newly elected coordinator cannot crash during the 
+synchronization phase (i.e., while broadcasting the \texttt{Synchronization} message)
 % TODO @ozneroL541
