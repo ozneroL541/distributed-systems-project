@@ -1,19 +1,18 @@
-\section{System Design}
-\label{sec:sys-design}
+\section{System Design}\label{sec:sys-design}
 % Define protocols specific choices
 \subsection{Two-phase Broadcast Protocol}
 The implemented two-phase broadcast protocol allows any client to issue \texttt{WriteRequest} or \texttt{ReadRequest} messages to any replica within the system.
 Upon receiving a request, the replica processes it differently depending on its type. If it is a \texttt{ReadRequest}, the replica immediately replies to the client with the requested value.
-If, instead, it's a \texttt{WriteRequest}, the replica stores the received message in a pending writes queue and forwards the request to the system's coordinator. This queue allows the replica to keep track of uncompleted write operations requested to them directly by a client. 
-Once the write operation will eventually be completed, the replica utilizes this queue to forward a \texttt{WriteResult} message back to the client.
+If, instead, it's a \texttt{WriteRequest}, the replica stores the received message in a pending writes queue and forwards the request to the system's coordinator. This queue allows the replica to keep track of uncompleted write operations requested to it directly by a client. 
+Once the write operation is eventually completed, the replica utilizes this queue to forward a \texttt{WriteResult} message back to the client.
 When the coordinator receives the forwarded write request, it first sends an acknowledgment to the replica that forwarded it and then it broadcasts an \texttt{UpdateMessage} to all replicas in the system. This message contains both the \texttt{WriteRequest} and the unique identifier,  consisting of an \texttt{epoch} $e$ and a \texttt{sequence number} $i$, assigned to the request by the coordinator.
 The coordinator then waits to receive an acknowledgment for the update from a quorum, which must consist of at least a strict majority of the system's replicas. 
 It is important to note that, in this context, the coordinator also acts as a standard replica; therefore, it sends the \texttt{UpdateMessage} to itself and counts its own internal acknowledgment as valid for reaching the required quorum.
-Every replica that receives an \texttt{UpdateMessage} inserts the \texttt{WriteRequest} into a local HashMap, using the coordinator-assigned identifier as the key. After storing the message, the replica sends an acknowledgment back to the coordinator.
+Every replica that receives an \texttt{UpdateMessage} inserts the \texttt{WriteRequest} into a local hash table, using the coordinator-assigned identifier as the key. After storing the message, the replica sends an acknowledgment back to the coordinator.
 Upon successfully collecting acknowledgments from a valid quorum, the coordinator broadcasts a \texttt{WriteOK} message to all replicas in the system.
 Once a replica receives the \texttt{WriteOK} message, it executes the write operation only if the identifier associated with the request is greater than the identifier of the last executed write.
-After the write is successfully applied, the replica updates its write history. This history is maintained via a HashMap that associates each identifier with its corresponding \texttt{WriteRequest} message.
-Finally, the replica removes the newly executed write from the local HashMap used while handling the \texttt{UpdateMessage}. If the write was also present in the pending writes queue, then the replica sends a \texttt{WriteResult} message to the originating client.
+After the write is successfully applied, the replica updates its write history. This history is maintained via a hash table that associates each identifier with its corresponding \texttt{WriteRequest} message.
+Finally, the replica removes the newly executed write from the local hash table used while handling the \texttt{UpdateMessage}. If the write was also present in the pending writes queue, then the replica sends a \texttt{WriteResult} message to the originating client.
 \subsection{Crash Detection}
 How do you manage timeouts?
 How do you control crashes?
@@ -31,6 +30,6 @@ Once the initial \texttt{Heartbeat} messages have been dispatched, the coordinat
 \end{itemize}
 Regarding the first category, given the design of the leader election protocol, the newly elected coordinator is guaranteed to be the replica with the most up-to-date knowledge of these messages. Therefore, it will first put these messages into its own history,
 handling any necessary \texttt{WriteResult} messages to be sent back to the clients. Once the history is updated, it will filter and extract from it all the updates subsequent to the last update executed by the least up-to-date replica, and broadcast these messages via a \texttt{Synchronization} message.
-Upon receiving the \texttt{Synchronization} message, each replica executes all the \texttt{WriteRequest} and updates its own history. Then, they clean their local HashMaps and pending writes queue. If some write messages were present in their pending writes queue, the replica will then forward a \texttt{WriteResult} message to the client that initially issued the request.
-Once the history is fully synchronized, the replica iterates through all \texttt{WriteRequest} messages waiting to be forwarded and sends them to the new coordinator. The coordinator will then assign them a new identifier and process as standard new messages.
+Upon receiving the \texttt{Synchronization} message, each replica executes all the \texttt{WriteRequests} and updates its own history. Then, they clean their local hash tables and pending writes queue. If some write messages were present in their pending writes queue, the replica will then forward a \texttt{WriteResult} message to the client that initially issued the request.
+Once the history is fully synchronized, the replica iterates through all \texttt{WriteRequest} messages waiting to be forwarded and sends them to the new coordinator. The coordinator will then assign them a new identifier and process them as standard new messages.
 Finally, once all replicas have received the \texttt{Synchronization} message, applied the necessary updates, and forwarded any pending \texttt{WriteRequest} messages, the system officially returns to a normal operational state.

@@ -2,13 +2,29 @@
 In this section, we want to show how the design choices made in the design section (\ref{sec:sys-design}) have been implemented in the code. 
 \section{Read}
 For the read operation, the implementation was straightforward. The replica simply returns the value associated with the requested key from its positions array.
-Thanks to the broadcast protocol's design, a \texttt{ReadRequest} message sent after reciving a \texttt{WriteResult} for a previous
+Thanks to the broadcast protocol's design, a \texttt{ReadRequest} message sent after receiving a \texttt{WriteResult} for a previous
 write operation will always return the value of the write or a more recent one.
-The \texttt{ReadRequest} message are handled by the \texttt{onReadRequest} method of the \texttt{Replica} class.
+The \texttt{ReadRequest} messages are handled by the \texttt{onReadRequest} method of the \texttt{Replica} class.
 Even during the election protocol, the \texttt{ReadRequest} messages are handled in the same way.
-While during an election, the replica may not have the most up-to-date information, it will still return a possibly outdated but still valid
-\texttt{ReadResult} message, avoiding uncessary read timeouts for the client.
+During an election, the replica may not have the most up-to-date information,but it will still return a possibly outdated but valid
+\texttt{ReadResult} message, avoiding unnecessary read timeouts for the client.
 \section{Write}
+For handling \texttt{WriteRequest} messages, each replica has three data structures:
+\begin{enumerate}
+    \item A queue called \texttt{pendingWrites}, implemented with an \texttt{ArrayDeque}, that keeps all the \texttt{WriteRequest} messages received from clients.
+    \item A hash table called \texttt{waitingForWriteOK}, implemented with a \texttt{HashMap}, that keeps all the \texttt{WriteRequest} messages received from the coordinator with an \texttt{UpdateMessage} and waiting for a \texttt{WriteOK} message to be executed.
+    \item A hash table called \texttt{history}, implemented with a \texttt{HashMap}, that keeps all the \texttt{WriteRequest} messages that have been executed.
+\end{enumerate}
+The two hash tables use a custom class called \texttt{UpdateClock} as a key, which implements the \texttt{identifier} and handles comparisons between \texttt{identifiers}, increments to the \texttt{sequence number} or the \texttt{epoch}, and synchronization between two \texttt{UpdateClock} objects.
+Using these data structures, the replica can determine at which step of the two-phase broadcast protocol each message is currently at.
+
+For the hash tables, we can leverage the \texttt{UpdateClock} to uniquely identify each message.
+This is not possible for the messages inside the \texttt{pendingWrites} queue, since they have not been assigned an identifier yet.
+Nevertheless, given the assumptions of reliable and FIFO channels, we can assume that the order of the messages in the queue is the same as the order in which they have been received by the replica.
+
+During elections, a replica cannot modify its own data structures, 
+as this would also alter the replica's clock, which is used to determine the next coordinator.
+For this reason, the replica will store all incoming \texttt{WriteRequest} messages in the \texttt{pendingWrites} queue, but it will not process them until the election is over and a new coordinator has been elected.
 % TODO @AleCornella
 \section{Election Acknowledgment}
 % TODO @ozneroL541

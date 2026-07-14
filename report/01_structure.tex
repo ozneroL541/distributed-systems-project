@@ -5,8 +5,7 @@
 \subsection{Code Structure}
 % TODO @ozneroL541
 \subsection{Our Assumptions}
-
-Assumiamo che in caso la replica che ha ricevuto un messaggio di scrittura da un client crashi, la scrittura andrà in timeout per il client ma verrà comunque eseguita dal coordinatore e dalle altre repliche dopo l'elezione di un nuovo coordinatore. 
-Assumiamo che il coordinatore neo eletto non possa crashare durante il sync message.
-% TODO @@AleCornella
+We assume that if a replica crashes after receiving a write request from a client,the operation will time out from the client's perspective. 
+ Nevertheless, the write operation will still be processed and applied by the coordinator and the remaining correct replicas following the election of a new coordinator.
+Furthermore, we assume that a newly elected coordinator cannot crash during the synchronization phase (i.e., while broadcasting the \texttt{Synchronization} message)
 % TODO @ozneroL541
