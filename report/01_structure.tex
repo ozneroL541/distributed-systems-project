@@ -46,4 +46,5 @@ Nevertheless, the write operation will still be processed and applied by the
 coordinator and the remaining correct replicas following the election of a new coordinator.
 Furthermore, we assume that a newly elected coordinator cannot crash during the 
 synchronization phase (i.e., while broadcasting the \texttt{Synchronization} message)
+We also assume that the if a coordinator crashes before handling any \texttt{WriteRequest} messages, the new coordinator will still use the same \texttt{epoch} $e$ as the previous coordinator.
 % TODO @ozneroL541
