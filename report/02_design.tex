@@ -13,10 +13,8 @@ Upon successfully collecting acknowledgments from a valid quorum, the coordinato
 Once a replica receives the \texttt{WriteOK} message, it executes the write operation only if the identifier associated with the request is greater than the identifier of the last executed write.
 After the write is successfully applied, the replica updates its write history. This history is maintained via a hash table that associates each identifier with its corresponding \texttt{WriteRequest} message.
 Finally, the replica removes the newly executed write from the local hash table used while handling the \texttt{UpdateMessage}. If the write was also present in the pending writes queue, then the replica sends a \texttt{WriteResult} message to the originating client.
+
 \subsection{Crash Detection}
-How do you manage timeouts?
-How do you control crashes?
-% TODO @ozneroL541
 In order to detect when the coordinator has crashed, it periodically sends an
 \texttt{Heartbeat} message in broadcast to all replicas in the system.
 Each replica maintains a timer that is reset every time it receives a 
@@ -30,8 +28,38 @@ and set its own timer to half of the standard timeout value to trigger it
 before the timer of the other replicas.
 
 \subsection{Election Protocol}
-How do you ensure election does not block forever?
-% TODO @ozneroL541
+The election protocol is based on a logical ring topology, 
+where replicas are arranged by their unique identifiers in a circular manner.
+When a replica detects that the coordinator has crashed, 
+it sends an \texttt{Election} message to its successor in the ring.
+The \texttt{Election} message contains the identifier of the replica 
+that initiated the election and a \texttt{Map} which contains the \texttt{id}
+of all replicas that have participated in the election so far and their
+\texttt{UpdateClock}, which is a logical clock that tracks the updates.
+When the \texttt{Election} message reaches a replica, it checks whether it 
+should process it and if does it adds its own identifier and 
+\texttt{UpdateClock} to the \texttt{Map} and forwards the message to 
+its successor in the ring and an Acknowledgment message to the replica 
+that sent the \texttt{Election} message before it.
+When sending the \texttt{Election} message, the replica sets a timer 
+to wait for an acknowledgment from its successor.
+If the timer expires without receiving an acknowledgment,
+the replica assumes that its successor has crashed and sends the 
+\texttt{Election} message to the next replica in the ring.
+When the \texttt{Election} message returns to the replica that initiated the election
+or to a replica that has already participated in the election,
+it determines the new coordinator by selecting the replica with the 
+most recent \texttt{UpdateClock} (or the highest identifier in case of a tie) 
+from the \texttt{Map} contained in the \texttt{Election} message and 
+sends a \texttt{CoordinatorElected} message which is propagated around the ring 
+as before, until it reaches the new coordinator.
+When that message reaches the new coordinator, it sends the 
+\texttt{Synchronization} message to all replicas in the system, 
+which contains the updates that need to be applied to bring all replicas up to date 
+with the new coordinator's state.
+The \texttt{Synchronization} message will not be processed by the replicas until 
+they have received the \texttt{CoordinatorElected} message.
+
 \subsection{Synchronization Protocol}
 Once a new coordinator is elected, it must perform a series of operations before restoring the system to the default state.
 First, it will broadcast a \texttt{Heartbeat} message to all replicas in the system. It is crucial that this is one of the coordinator's initial actions to prevent replicas from timing out due to a lack of \texttt{Heartbeat} messages, which would trigger a new, erroneous election.
