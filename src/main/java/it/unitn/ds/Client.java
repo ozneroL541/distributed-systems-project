@@ -40,7 +40,9 @@ public class Client extends AbstractClient {
     // =================================================================================
     @Override
     public void sendRead(ActorRef replica, int index) {
-        log("Sending a Read request to:"+ replica.path().name());
+        // TODO: Should be ReplicaID
+        // – [Client <ClientName>] requesting READ (<idx>) to <ReplicaID>
+        log("requesting READ " + index + " to " + replica.path().name());
         replica.tell(new AbstractClient.ReadRequest(index, replica), this.getSelf());
         Queue<Cancellable> queue = this.sendReadRequestTimeouts.computeIfAbsent(replica.path().name(), k -> new ArrayDeque<>());
         queue.add(getContext().system().scheduler().scheduleOnce(
@@ -53,7 +55,9 @@ public class Client extends AbstractClient {
 
     @Override
     public void sendWrite(ActorRef replica, int index, int value) {
-        log("Sending a Write request to: " + replica.path().name() +" with content: {index:"+index+", value:"+value+"}");
+        // TODO: Should be ReplicaID
+        // – [Client <ClientName>] requesting WRITE (<idx>, <val>) to <ReplicaID>
+        log("requesting WRITE " + index + ", " + value + " to " + replica.path().name());
         replica.tell(new AbstractClient.WriteRequest(index, value, replica),this.getSelf());
         Queue<Cancellable> queue = this.sendWriteRequestTimeouts.computeIfAbsent(replica.path().name(), k -> new ArrayDeque<>());
         queue.add(getContext().system().scheduler().scheduleOnce(
