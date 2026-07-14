@@ -1,7 +1,8 @@
 \section{System Design}
+\label{sec:sys-design}
 % Define protocols specific choices
-\subsection{Broadcast Protocol}
-The implemented broadcast protocol allows any client to issue \texttt{WriteRequest} or \texttt{ReadRequest} messages to any replica within the system.
+\subsection{Two-phase Broadcast Protocol}
+The implemented two-phase broadcast protocol allows any client to issue \texttt{WriteRequest} or \texttt{ReadRequest} messages to any replica within the system.
 Upon receiving a request, the replica processes it differently depending on its type. If it is a \texttt{ReadRequest}, the replica immediately replies to the client with the requested value.
 If, instead, it's a \texttt{WriteRequest}, the replica stores the received message in a pending writes queue and forwards the request to the system's coordinator. This queue allows the replica to keep track of uncompleted write operations requested to them directly by a client. 
 Once the write operation will eventually be completed, the replica utilizes this queue to forward a \texttt{WriteResult} message back to the client.

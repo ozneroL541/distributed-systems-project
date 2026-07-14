@@ -1,7 +1,13 @@
 \section{Implementation}
-
+In this section, we want to show how the design choices made in the design section (\ref{sec:sys-design}) have been implemented in the code. 
 \section{Read}
-% TODO @AleCornella
+For the read operation, the implementation was straightforward. The replica simply returns the value associated with the requested key from its positions array.
+Thanks to the broadcast protocol's design, a \texttt{ReadRequest} message sent after reciving a \texttt{WriteResult} for a previous
+write operation will always return the value of the write or a more recent one.
+The \texttt{ReadRequest} message are handled by the \texttt{onReadRequest} method of the \texttt{Replica} class.
+Even during the election protocol, the \texttt{ReadRequest} messages are handled in the same way.
+While during an election, the replica may not have the most up-to-date information, it will still return a possibly outdated but still valid
+\texttt{ReadResult} message, avoiding uncessary read timeouts for the client.
 \section{Write}
 % TODO @AleCornella
 \section{Election Acknowledgment}
