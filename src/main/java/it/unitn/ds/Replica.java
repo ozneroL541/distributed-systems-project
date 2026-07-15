@@ -810,8 +810,6 @@ public class Replica extends AbstractReplica {
      * @param worstClock the worst clock value among the replicas
      */
     private void onElectedCoordinator(int newCoordinatorId, UpdateClock worstClock) {
-//        /** The shortened history of updates */
-//        final Map<UpdateClock, AbstractClient.WriteRequest> shortnedHistory = this.getShortnedHistory(worstClock);
         // Update the coordinator ID and handle the event when a new coordinator is elected
         this.newCoordinator(newCoordinatorId);
         /** The shortened history of updates */
@@ -994,7 +992,6 @@ public class Replica extends AbstractReplica {
      */
     private void startElection() {
         //debug("Election started by replica: " + this.id);
-    // ElectionMessage electionMessage = new ElectionMessage(this.id, this.updateClock);
         Election election = new Election(this.id, this.waitingForWriteOkUpdateClock.clone(), this.updateClock.clone());
         if (this.isElectionInProgress() && this.electionInProgress <= this.id) {
             // An election is already in progress
@@ -1114,7 +1111,7 @@ public class Replica extends AbstractReplica {
         }
     }
 
- private void updateHistory() {
+    private void updateHistory() {
         List<UpdateClock> ordered_clock = this.waitingForWriteOK.keySet().stream().sorted().toList();
         for (UpdateClock clk : ordered_clock) {
             AbstractClient.WriteRequest writeRequest = this.waitingForWriteOK.get(clk);
